@@ -1,6 +1,4 @@
-window.addEventListener("DOMContentLoaded", () => {
-
-  // Detecta si estamos en GitHub Pages
+ // Detecta si estamos en GitHub Pages
   const isGitHub = window.location.hostname.includes("github.io");
 
   if (isGitHub) {
@@ -14,6 +12,11 @@ window.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+
+
+window.addEventListener("DOMContentLoaded", () => {
+
+ 
 
 
   // ======================
