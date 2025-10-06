@@ -1,0 +1,217 @@
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body{
+  overflow-x: hidden;
+}
+
+
+.contenedorCanvasTotal{
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+}
+
+
+#canvasContainer{
+  display: flex;
+  justify-content: center; 
+  align-items: center;     
+  min-height: 80vh;   
+}
+
+
+.canvasWrapper {
+  position: relative;
+  display: inline-block;
+  width: 512px;   /* ancho del canvas */
+  height: 512px;  /* alto del canvas */
+}
+
+
+#gridCanvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0; /* fondo */
+  pointer-events: none; /* no recibe clics */
+
+}
+
+
+/* ambos canvas se apilan dentro del wrapper */
+.canvasWrapper canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+
+#pixelCanvas {
+  display: block; /* mejor que flex aquí */
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1; /* frente */
+}
+
+#pixelCursor {
+  position: absolute;
+  pointer-events: none;
+  z-index: 2;
+}
+
+
+#barraSuperior {
+  position:static;
+}
+
+.tituloPixelForge{
+    font-size: 40px;
+    margin-top: 2vh;
+    margin-bottom: 2vh;
+    text-align: center;
+
+}
+
+.descripcionPixelForge{
+    font-size: 16px;
+    margin-left: 3vh;
+    margin-right: 3vh;
+    text-align:justify;
+    margin-bottom:3vh;
+    margin-top: 2vh;
+}
+
+
+/*menu de herraminetas*/
+
+.herramientasPixelForge {
+  position: absolute;      /* permite moverlo libremente */
+  top: 35vh;       /* posición inicial */
+  right: 5vh;
+  background: #222;
+  padding: 10px;
+  border: 1px solid #555;
+  border-radius: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  cursor: move;            /* icono de mover */
+  z-index: 1000;
+  width: 450px;
+}
+
+.herramientasPixelForge button,
+.herramientasPixelForge input[type="color"] {
+  padding: 6px 10px;
+  border: 1px solid #555;
+  background: #333;
+  color: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+
+  #pencilMenu {
+    position: absolute;
+    top: 35vh; /* posición inicial */
+    left: 5vh;  /* posición inicial */
+    background: #222;
+    color: white;
+    padding: 8px;
+    border-radius: 6px;
+    box-shadow: 0 0 8px rgba(0,0,0,0.3);
+    cursor: move; /* indica que se puede arrastrar */
+    z-index: 1000;
+    width: 100px;
+  }
+ 
+  #pencilMenu.hidden {
+  display: none;
+}
+
+#pixelCursor {
+  position: absolute;
+  pointer-events: none; /* no bloquea clics */
+  display: none;
+  z-index: 2000;
+  border: 1px solid rgba(0,0,0,0.2); /* un borde sutil para ver mejor */
+}
+#pixelCanvas {
+  cursor: none; /* ocultar cursor normal */
+}
+
+/*menu guardar*/
+.toolbox {
+  position: fixed;
+  bottom: 13vh;   /* separada del borde inferior */
+  right: 3vh;    /* pegada a la derecha */
+  background: #222;
+  color: white;
+  padding: 8px;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+  width: 120px;
+}
+
+.toolbox select {
+  padding: 2px;
+  border-radius: 5px;
+  font-size: 10px;
+}
+
+  /* menú de figuras */
+
+
+
+  #figuresMenu {
+    display: none; /* Oculto por defecto */
+    position: absolute;
+    top: 80px;
+    left: 40px;
+    background: #222;
+    border: 1px solid #666;
+    border-radius: 8px;
+    padding: 8px;
+    box-shadow: 0 0 8px rgba(0,0,0,0.5);
+    min-width: 150px;
+    max-width: 250px; /* límite de ancho */
+    z-index: 1000;
+  }
+
+  .menuHeader {
+    background: #444;
+    padding: 5px;
+    cursor: move;
+    color: #fff;
+    font-weight: bold;
+    border-radius: 5px 5px 0 0;
+    margin-bottom: 6px;
+    text-align: center;
+  }
+
+  #figuresMenu button {
+    display: block;
+    width: 100%;
+    margin: 4px 0;
+    padding: 6px;
+    background: #333;
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    border-radius: 4px;
+  }
+
+  #figuresMenu button:hover {
+    background: #555;
+  }

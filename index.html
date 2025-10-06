@@ -1,0 +1,175 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">  
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pixel Forge</title>
+    <link rel="stylesheet" href="../../style.css">
+    <link rel="stylesheet" href="./style.css">
+
+</head>
+<body>
+    
+  <!-- Barra superior -->
+    <header id="barraSuperior">
+      <div class="contenedorHeader">
+
+        <nav class="navegacionPrincipal" aria-label="Navegación principal">
+          <ul class="menuBarraSuperior">
+            <li class="textoBarraSuperior"><a href="../../index.html">Inicio</a></li>
+            <li class="textoBarraSuperior"><a href="#">SnakeCore</a></li>
+            <li class="textoBarraSuperior"><a href="../../index.html#proyectos">Proyectos</a></li>
+          </ul>
+        </nav>
+        <img class="LogoPixelBarraSuperior" src="../../image/LogoPixel.png" alt="LogoSnake"/>
+
+      </div>
+    </header>
+    <!--presentacion pagina-->
+
+    <h1 class="tituloPixelForge">PixelForge</h1>
+
+    <!--descripcion de pixel forge-->
+
+
+    <p class="descripcionPixelForge">PixelForge es una herramienta de diseño gráfico enfocada en la creación y edición de gráficos en píxeles. Ideal para artistas digitales, desarrolladores de videojuegos y entusiastas del arte retro, PixelForge ofrece una interfaz intuitiva y una variedad de herramientas especializadas para trabajar con píxeles.</p>
+
+
+    
+
+        <!--canvas--> 
+
+<!-- Aquí aparecerá el canvas -->
+
+<div class="contenedorCanvasTotal"> 
+
+<div id="canvasContainer">
+
+ <div class="canvasWrapper" style="position: relative; display: inline-block;">
+  <canvas id="pixelCanvas" width="512" height="512" style="position: absolute; left:0; top:0; z-index:1;"></canvas>
+  <canvas id="gridCanvas" width="512" height="512" style="position: absolute; left:0; top:0; z-index:2; pointer-events: none;"></canvas>
+</div>
+
+
+</div>
+
+    <label for="gridSize">Tamaño de la grilla:</label>
+    <input type="number" id="gridSize" value="16" min="2" max="256">        
+</div>
+
+<!-- MINIMAPA -->
+<canvas id="miniMap" width="200" height="200" style="border:1px solid #000;"></canvas>
+
+
+  <!-- El div que simula el cursor -->
+
+<div id="pixelCursor"></div>
+
+<!-- Botón fijo -->
+
+
+
+<div class="toolbox exportar">
+  <label for="saveOptions">Exportar: </label>
+  <select id="saveOptions">
+    <option value="">Selecciona formato</option>
+    <option value="png">PNG</option>
+    <option value="jpg">JPG</option>
+    <option value="svg">SVG</option>
+  </select>
+    <button id="saveBtn">Guardar</button>
+    <button id="saveBtnRealSize">Guardar</button>
+
+    
+
+</div>
+
+
+
+<div class="herramientasPixelForge">
+        <button id="pencilBtn">Lápiz</button>
+        <button id="eraserBtn">Borrador</button>
+        <button id="figuresBtn">Figuras</button>
+        <input type="color" id="colorPicker" value="#000000">
+        <button id="clearCanvas">Limpiar Lienzo</button>
+        <button id="fillTool">Rellenar</button>
+        <button id="toggleGrid">Mostrar/Ocultar Rejilla (G)</button>
+        <button id="undo">Deshacer</button>
+        <button id="redo">Rehacer</button>
+
+        </div>
+
+        <!-- Menú de figuras -->
+<div id="figuresMenu" class="menu">
+  <div class="menuHeader">Figuras ✦</div>
+  <button class="figureOption" data-figure="circle">Círculo</button>
+  <button class="figureOption" data-figure="triangle">Triángulo</button>
+  <button class="figureOption" data-figure="square">Cuadrado</button>
+  <button class="figureOption" data-figure="line">Línea recta</button>
+  <button class="figureOption" data-figure="curve">Línea curva</button>
+</div>
+
+<!-- ================== -->
+<!-- CONTROLES DE ZOOM -->
+<!-- ================== -->
+<div>
+  <button id="zoomIn">+</button>
+  <button id="zoomOut">-</button>
+  <span id="zoomLevelDisplay">Zoom: 100%</span>
+</div>
+
+<!-- PANEL DE CONFIGURACIÓN -->
+
+
+ <div id="settingsPanel" style="border:1px solid #555; padding:10px; width:250px; margin-top:10px;">
+  <h3>Configuración</h3>
+
+  <label for="historyRange">Límite de deshacer/rehacer:</label><br>
+  <input type="range" id="historyRange" min="10" max="200" step="10">
+  <span id="historyValue"></span>
+
+  <br><br>
+  <button id="saveSettings">Guardar Configuración</button>
+</div>
+
+             <!-- menu lapiz -->
+
+<div id="pencilMenu" class="hidden">
+    <label for="pencilSize">Tamaño:</label>
+    <select id="pencilSize">
+        <option value="1">1 px</option>
+        <option value="2">2 px</option>
+        <option value="4">4 px</option>
+        <option value="8">8 px</option>
+    </select>
+</div>
+
+      
+  
+
+
+
+        
+
+
+
+
+
+
+       <!-- pie de pagina -->
+
+      <footer id="piePagina">
+      <div class="contenedorPiepagina">
+      <p class="textoDerechosAutor">&copy; 2025 SnakeByte Studio. Todos los derechos reservados.</p>
+      
+      <a href="https://www.facebook.com/profile.php?id=61578758635101" target="_blank">
+
+      <img class="LogoFacebookBarraInferior" src="../../image/LogoFacebook.png" alt="LogoFacebook"/>
+        </a>
+      </di>
+      
+        </footer>
+    <!-- Fin pie de pagina -->
+
+    <script src="./js/script.js"></script>
+</body>
+</html>
