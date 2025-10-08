@@ -416,7 +416,10 @@ saveState(); // guardar estado inicial del canvas
     currentColor = e.target.value;
   });
 
- function drawPixel(e) {
+function drawPixel(e) {
+  // <--- ADD: si estamos seleccionando para la lupa, no dibujar
+  if (window.__zoomSelecting) return;
+
   if (!drawing) return;
 
   const rect = pixelCanvas.getBoundingClientRect();
@@ -1598,6 +1601,410 @@ pixelCanvas.addEventListener("mouseleave", () => {
 
 
 
+// ======================
+// HERRAMIENTA LUPA / ZOOM (pegar al final del DOMContentLoaded)
+// ======================
+(function () {
+  // Bandera global usada por drawPixel para pausar el lápiz mientras se selecciona
+  window.__zoomSelecting = false;
+
+  const lupaBtn = document.getElementById("lupaBtn");
+  let selectionBox = null;
+  let selStart = null; // {cx, cy} en celdas
+  let selRect = null;  // {x, y, w, h} en píxeles de canvas
+  let zoomWindow = null;
+  let zoomCanvas = null;
+  let zoomCtx = null;
+  let zoomLevel = 2; // x2 por defecto
+  let isDraggingWindow = false;
+  let dragOffset = { x: 0, y: 0 };
+  let isDrawingInZoom = false;
+
+  // Helpers
+  function getCellSize() {
+    return Math.floor(pixelCanvas.width / gridSize);
+  }
+
+  function getMouseCell(e) {
+    const rect = pixelCanvas.getBoundingClientRect();
+    const cellSize = getCellSize();
+    const cx = Math.floor((e.clientX - rect.left) / cellSize);
+    const cy = Math.floor((e.clientY - rect.top) / cellSize);
+    return { cx: clamp(cx, 0, gridSize - 1), cy: clamp(cy, 0, gridSize - 1) };
+  }
+
+  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+
+  // Activate/deactivate selection mode
+  lupaBtn.addEventListener("click", () => {
+    if (window.__zoomSelecting) {
+      cancelSelectionMode();
+      return;
+    }
+    // start selection mode
+    window.__zoomSelecting = true;
+    pixelCanvas.style.cursor = "crosshair";
+    // create selection visual (div)
+    if (!selectionBox) {
+      selectionBox = document.createElement("div");
+      selectionBox.style.position = "absolute";
+      selectionBox.style.pointerEvents = "none";
+      selectionBox.style.border = "2px dashed rgba(0,0,0,0.7)";
+      selectionBox.style.background = "rgba(0,0,0,0.06)";
+      selectionBox.style.zIndex = "9999";
+      document.body.appendChild(selectionBox);
+    }
+  });
+
+  function cancelSelectionMode() {
+    window.__zoomSelecting = false;
+    pixelCanvas.style.cursor = "default";
+    if (selectionBox) {
+      selectionBox.remove();
+      selectionBox = null;
+    }
+  }
+
+  // Mouse handlers on the main canvas for selection (aligned to grid)
+  pixelCanvas.addEventListener("mousedown", (e) => {
+    if (!window.__zoomSelecting) return;
+    // Start cell
+    const { cx, cy } = getMouseCell(e);
+    selStart = { cx, cy };
+    updateSelectionBoxPosition(cx, cy, cx, cy);
+    // add temporary listeners for move/up
+    const move = (ev) => {
+      const { cx: mcx, cy: mcy } = getMouseCell(ev);
+      updateSelectionBoxPosition(selStart.cx, selStart.cy, mcx, mcy);
+    };
+    const up = (ev) => {
+      document.removeEventListener("mousemove", move);
+      document.removeEventListener("mouseup", up);
+      const { cx: ecx, cy: ecy } = getMouseCell(ev);
+      finalizeSelection(selStart.cx, selStart.cy, ecx, ecy);
+    };
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", up);
+  });
+
+  function updateSelectionBoxPosition(sx, sy, ex, ey) {
+    const cellSize = getCellSize();
+    const minX = Math.min(sx, ex);
+    const minY = Math.min(sy, ey);
+    const wCells = Math.abs(ex - sx) + 1;
+    const hCells = Math.abs(ey - sy) + 1;
+    // canvas bounding rect for absolute positioning
+    const cRect = pixelCanvas.getBoundingClientRect();
+    const left = cRect.left + minX * cellSize + window.scrollX;
+    const top = cRect.top + minY * cellSize + window.scrollY;
+    const width = wCells * cellSize;
+    const height = hCells * cellSize;
+
+    if (!selectionBox) return;
+    selectionBox.style.left = left + "px";
+    selectionBox.style.top = top + "px";
+    selectionBox.style.width = width + "px";
+    selectionBox.style.height = height + "px";
+  }
+
+  function finalizeSelection(sx, sy, ex, ey) {
+    // compute rect (in canvas pixels)
+    const minX = Math.min(sx, ex);
+    const minY = Math.min(sy, ey);
+    const wCells = Math.abs(ex - sx) + 1;
+    const hCells = Math.abs(ey - sy) + 1;
+    const cellSize = getCellSize();
+
+    selRect = {
+      x: minX * cellSize,
+      y: minY * cellSize,
+      w: wCells * cellSize,
+      h: hCells * cellSize,
+      cellsW: wCells,
+      cellsH: hCells,
+      cellX: minX,
+      cellY: minY
+    };
+
+    // stop selection mode (but keep selectionBox until zoomWindow created)
+    window.__zoomSelecting = false;
+    pixelCanvas.style.cursor = "default";
+
+    // Create the zoom window
+    createZoomWindow();
+    // remove selection box (we'll draw grid inside zoom)
+    if (selectionBox) {
+      selectionBox.remove();
+      selectionBox = null;
+    }
+  }
+
+  // Create zoom window
+  function createZoomWindow() {
+    if (!selRect) return;
+
+    // remove old
+    if (zoomWindow) zoomWindow.remove();
+
+    // build window
+    zoomWindow = document.createElement("div");
+    zoomWindow.style.position = "fixed";
+    zoomWindow.style.left = "calc(100% - 360px)"; // default top-right area
+    zoomWindow.style.top = "20px";
+    zoomWindow.style.background = "#fff";
+    zoomWindow.style.border = "2px solid #111";
+    zoomWindow.style.borderRadius = "6px";
+    zoomWindow.style.zIndex = "10001";
+    zoomWindow.style.userSelect = "none";
+    zoomWindow.style.display = "flex";
+    zoomWindow.style.flexDirection = "column";
+    zoomWindow.style.padding = "0";
+    zoomWindow.style.boxShadow = "0 6px 18px rgba(0,0,0,0.25)";
+
+    // header (drag handle + controls)
+    const header = document.createElement("div");
+    header.style.display = "flex";
+    header.style.alignItems = "center";
+    header.style.justifyContent = "space-between";
+    header.style.background = "#f4f4f4";
+    header.style.padding = "6px 8px";
+    header.style.cursor = "move";
+    header.style.borderBottom = "1px solid #ddd";
+
+    const leftControls = document.createElement("div");
+    leftControls.style.display = "flex";
+    leftControls.style.gap = "6px";
+
+    const btn2 = document.createElement("button");
+    btn2.textContent = "x2";
+    btn2.dataset.z = "2";
+    const btn3 = document.createElement("button");
+    btn3.textContent = "x3";
+    btn3.dataset.z = "3";
+    const btn4 = document.createElement("button");
+    btn4.textContent = "x4";
+    btn4.dataset.z = "4";
+    leftControls.appendChild(btn2);
+    leftControls.appendChild(btn3);
+    leftControls.appendChild(btn4);
+
+    const rightControls = document.createElement("div");
+    rightControls.style.display = "flex";
+    rightControls.style.gap = "6px";
+    const closeBtn = document.createElement("button");
+    closeBtn.textContent = "✕";
+    closeBtn.title = "Cerrar lupa";
+    rightControls.appendChild(closeBtn);
+
+    header.appendChild(leftControls);
+    header.appendChild(rightControls);
+
+    // canvas
+    zoomCanvas = document.createElement("canvas");
+    // each cell in zoom will be cellSize * zoomLevel px, and we want width = cellsW * (cellSize*zoom)
+    const cellSize = getCellSize();
+    zoomCanvas.width = selRect.cellsW * cellSize * zoomLevel;
+    zoomCanvas.height = selRect.cellsH * cellSize * zoomLevel;
+    zoomCanvas.style.imageRendering = "pixelated";
+    zoomCanvas.style.display = "block";
+    zoomCanvas.style.background = "#fff";
+    zoomCanvas.style.cursor = "crosshair";
+
+    // append
+    zoomWindow.appendChild(header);
+    zoomWindow.appendChild(zoomCanvas);
+    document.body.appendChild(zoomWindow);
+
+    zoomCtx = zoomCanvas.getContext("2d");
+    zoomCtx.imageSmoothingEnabled = false;
+
+    // make header draggable (move window)
+    header.addEventListener("mousedown", (ev) => {
+      isDraggingWindow = true;
+      dragOffset.x = ev.clientX - zoomWindow.offsetLeft;
+      dragOffset.y = ev.clientY - zoomWindow.offsetTop;
+    });
+    document.addEventListener("mousemove", (ev) => {
+      if (!isDraggingWindow) return;
+      zoomWindow.style.left = (ev.clientX - dragOffset.x) + "px";
+      zoomWindow.style.top = (ev.clientY - dragOffset.y) + "px";
+    });
+    document.addEventListener("mouseup", () => { isDraggingWindow = false; });
+
+    // close
+    closeBtn.addEventListener("click", () => {
+      if (zoomWindow) zoomWindow.remove();
+      zoomWindow = null;
+      selRect = null;
+    });
+
+    // zoom buttons
+    [btn2, btn3, btn4].forEach(b => {
+      b.addEventListener("click", () => {
+        zoomLevel = parseInt(b.dataset.z, 10);
+        zoomCanvas.width = selRect.cellsW * cellSize * zoomLevel;
+        zoomCanvas.height = selRect.cellsH * cellSize * zoomLevel;
+        drawZoom();
+      });
+    });
+
+    // draw initial
+    drawZoom();
+
+    // handle drawing inside zoom
+    // mousedown -> start drawingInZoom, saveState()
+    zoomCanvas.addEventListener("mousedown", (e) => {
+      // left button only
+      if (e.button !== 0) return;
+      isDrawingInZoom = true;
+      saveState(); // save once at start of stroke
+      handleZoomDraw(e);
+    });
+    zoomCanvas.addEventListener("mousemove", (e) => {
+      if (!isDrawingInZoom) return;
+      handleZoomDraw(e);
+    });
+    window.addEventListener("mouseup", () => {
+      if (isDrawingInZoom) {
+        isDrawingInZoom = false;
+        lastPos = null; // reset stroke continuity
+        updateMiniMap();
+      }
+    });
+
+    // keep zoom synced with changes in main canvas
+    // using rAF loop for smoothness
+    let alive = true;
+    const loop = () => {
+      if (!alive) return;
+      if (!zoomWindow) { alive = false; return; }
+      drawZoom();
+      requestAnimationFrame(loop);
+    };
+    requestAnimationFrame(loop);
+  }
+
+  // draw zoom contents and overlay grid (same color as your gridCanvas strokes)
+  function drawZoom() {
+    if (!zoomCtx || !selRect) return;
+    const cellSize = getCellSize();
+    // draw the selected rect from the main canvas, scale up by zoomLevel
+    zoomCtx.clearRect(0, 0, zoomCanvas.width, zoomCanvas.height);
+    zoomCtx.imageSmoothingEnabled = false;
+    zoomCtx.drawImage(
+      pixelCanvas,
+      selRect.x, selRect.y, selRect.w, selRect.h,
+      0, 0, selRect.w * zoomLevel, selRect.h * zoomLevel
+    );
+
+    // draw grid lines (same color as your gridCtx strokeStyle if possible)
+    // We'll sample pixel from gridCanvas (top-left inside a grid line area) to get color
+    let gridStroke = "#ccc";
+    try {
+      const sample = gridCtx.getImageData(1, 1, 1, 1).data;
+      gridStroke = `rgba(${sample[0]},${sample[1]},${sample[2]},${sample[3]/255})`;
+    } catch (err) {
+      gridStroke = "#ccc";
+    }
+    zoomCtx.strokeStyle = gridStroke;
+    zoomCtx.lineWidth = 1;
+
+    const cellScaled = cellSize * zoomLevel;
+    // verticals
+    for (let i = 0; i <= selRect.cellsW; i++) {
+      const x = i * cellScaled + 0.5; // 0.5 to keep sharp line
+      zoomCtx.beginPath();
+      zoomCtx.moveTo(x, 0);
+      zoomCtx.lineTo(x, zoomCanvas.height);
+      zoomCtx.stroke();
+    }
+    // horizontals
+    for (let j = 0; j <= selRect.cellsH; j++) {
+      const y = j * cellScaled + 0.5;
+      zoomCtx.beginPath();
+      zoomCtx.moveTo(0, y);
+      zoomCtx.lineTo(zoomCanvas.width, y);
+      zoomCtx.stroke();
+    }
+  }
+
+  // Handle drawing actions inside the zoom. This paints on the main ctx using grid cells.
+  function handleZoomDraw(e) {
+    if (!selRect) return;
+    const rect = zoomCanvas.getBoundingClientRect();
+    const cellSize = getCellSize();
+    const cellScaled = cellSize * zoomLevel;
+    const offsetX = e.clientX - rect.left;
+    const offsetY = e.clientY - rect.top;
+    const cellX = Math.floor(offsetX / cellScaled); // 0..cellsW-1
+    const cellY = Math.floor(offsetY / cellScaled);
+
+    // compute global cell coords on main canvas
+    const globalCellX = selRect.cellX + clamp(cellX, 0, selRect.cellsW - 1);
+    const globalCellY = selRect.cellY + clamp(cellY, 0, selRect.cellsH - 1);
+
+    // implement brush and eraser behavior mapped to grid cells (matching drawPixel logic)
+    const brush = currentBrush || 1;
+
+    const px = globalCellX;
+    const py = globalCellY;
+
+    const canvasCellSize = cellSize; // pixels per main-canvas-cell
+
+    // draw brush area (respecting currentTool)
+    for (let i = 0; i < brush; i++) {
+      for (let j = 0; j < brush; j++) {
+        const gx = px + i;
+        const gy = py + j;
+        if (gx < 0 || gy < 0 || gx >= gridSize || gy >= gridSize) continue;
+        const drawX = gx * canvasCellSize;
+        const drawY = gy * canvasCellSize;
+        if (currentTool === "pencil") {
+          ctx.fillStyle = currentColor;
+          ctx.fillRect(drawX, drawY, canvasCellSize, canvasCellSize);
+        } else if (currentTool === "eraser") {
+          ctx.clearRect(drawX, drawY, canvasCellSize, canvasCellSize);
+        } else if (currentTool === "fill") {
+          // fill tool mapped to cell coords
+          bucketFill(px, py, currentColor);
+        }
+      }
+    }
+
+    // Keep continuity like drawPixel: approximate interpolation between lastPos and this pos
+    if (lastPos) {
+      const dx = px - lastPos.x;
+      const dy = py - lastPos.y;
+      const steps = Math.max(Math.abs(dx), Math.abs(dy));
+      for (let step = 1; step < steps; step++) {
+        const ix = lastPos.x + Math.round((dx * step) / steps);
+        const iy = lastPos.y + Math.round((dy * step) / steps);
+        for (let i = 0; i < brush; i++) {
+          for (let j = 0; j < brush; j++) {
+            const gx = ix + i;
+            const gy = iy + j;
+            if (gx < 0 || gy < 0 || gx >= gridSize || gy >= gridSize) continue;
+            const drawX = gx * canvasCellSize;
+            const drawY = gy * canvasCellSize;
+            if (currentTool === "pencil") {
+              ctx.fillStyle = currentColor;
+              ctx.fillRect(drawX, drawY, canvasCellSize, canvasCellSize);
+            } else if (currentTool === "eraser") {
+              ctx.clearRect(drawX, drawY, canvasCellSize, canvasCellSize);
+            }
+          }
+        }
+      }
+    }
+
+    lastPos = { x: px, y: py };
+
+    // redraw zoom immediate
+    drawZoom();
+    updateMiniMap();
+  }
+
+})();
 
   
 

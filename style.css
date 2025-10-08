@@ -215,3 +215,32 @@ body{
   #figuresMenu button:hover {
     background: #555;
   }
+
+
+
+
+  /*zoom*/
+
+  .zoom-window {
+  position: fixed;
+  background: rgba(240, 240, 240, 0.95);
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  padding: 6px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+  cursor: move;
+  z-index: 1000;
+  user-select: none;
+}
+.zoom-controls {
+  display: flex;
+  justify-content: right;
+  margin-bottom: 4px;
+}
+.zoom-controls select {
+  border: none;
+  background: #fff;
+  padding: 3px;
+  border-radius: 4px;
+  font-size: 14px;
+}
