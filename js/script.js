@@ -1,154 +1,142 @@
- // Detecta si estamos en GitHub Pages
-  const isGitHub = window.location.hostname.includes("github.io");
+// Detecta si estamos en GitHub Pages
+const isGitHub = window.location.hostname.includes("github.io");
 
-  if (isGitHub) {
-    // Oculta el header y el footer si existe
-    document.addEventListener("DOMContentLoaded", () => {
-      const header = document.getElementById("barraSuperior");
-      const footer = document.getElementById("piePagina");
+if (isGitHub) {
+  // Oculta el header y el footer si existe
+  document.addEventListener("DOMContentLoaded", () => {
+    const header = document.getElementById("barraSuperior");
+    const footer = document.getElementById("piePagina");
 
-      if (header) header.style.display = "none";
-      if (footer) footer.style.display = "none";
-    });
-  }
-
-
+    if (header) header.style.display = "none";
+    if (footer) footer.style.display = "none";
+  });
+}
 
 window.addEventListener("DOMContentLoaded", () => {
-
- 
-
-
   // ======================
   // CONFIGURACIÓN CANVAS
   // ======================
   const gridCanvas = document.getElementById("gridCanvas"); // 🔹 canvas solo para la rejilla
-const gridCtx = gridCanvas.getContext("2d");
+  const gridCtx = gridCanvas.getContext("2d");
 
-const pixelCanvas = document.getElementById("pixelCanvas"); // 🔹 canvas principal
-const ctx = pixelCanvas.getContext("2d");
+  const pixelCanvas = document.getElementById("pixelCanvas"); // 🔹 canvas principal
+  const ctx = pixelCanvas.getContext("2d");
 
-const miniMap = document.getElementById("miniMap"); // 🔹 canvas minimapa
-const miniCtx = miniMap.getContext("2d");
+  const miniMap = document.getElementById("miniMap"); // 🔹 canvas minimapa
+  const miniCtx = miniMap.getContext("2d");
 
-const gridInput = document.getElementById("gridSize");
+  const gridInput = document.getElementById("gridSize");
 
   let gridSize = 16; // tamaño inicial de la grilla
-
-  
 
   // 🔹 historial (para undo/redo)
   let history = [];
   let redoStack = [];
   let maxHistory = parseInt(localStorage.getItem("maxHistory")) || 50;
 
-function drawGrid() {
-  gridCtx.clearRect(0, 0, gridCanvas.width, gridCanvas.height);
+  function drawGrid() {
+    gridCtx.clearRect(0, 0, gridCanvas.width, gridCanvas.height);
 
-  // ⚡ Ajustamos el tamaño de celda al entero más cercano
-  const cellSize = Math.floor(gridCanvas.width / gridSize);
+    // Ajustamos el tamaño de celda al entero más cercano
+    const cellSize = Math.floor(gridCanvas.width / gridSize);
 
-  gridCtx.beginPath();
-  gridCtx.strokeStyle = "#ccc";
-  gridCtx.lineWidth = 1;
+    gridCtx.beginPath();
+    gridCtx.strokeStyle = "#ccc";
+    gridCtx.lineWidth = 1;
 
-  // Dibujar columnas
-  for (let x = 0; x <= gridCanvas.width; x += cellSize) {
-    gridCtx.moveTo(x, 0);
-    gridCtx.lineTo(x, gridCanvas.height);
+    // Dibujar columnas
+    for (let x = 0; x <= gridCanvas.width; x += cellSize) {
+      gridCtx.moveTo(x, 0);
+      gridCtx.lineTo(x, gridCanvas.height);
+    }
+
+    // Dibujar filas
+    for (let y = 0; y <= gridCanvas.height; y += cellSize) {
+      gridCtx.moveTo(0, y);
+      gridCtx.lineTo(gridCanvas.width, y);
+    }
+
+    gridCtx.stroke();
   }
 
-  // Dibujar filas
-  for (let y = 0; y <= gridCanvas.height; y += cellSize) {
-    gridCtx.moveTo(0, y);
-    gridCtx.lineTo(gridCanvas.width, y);
+  // ======================
+  // MINIMAPA
+  // ======================
+  function updateMiniMap() {
+    miniCtx.clearRect(0, 0, miniMap.width, miniMap.height);
+    miniCtx.drawImage(pixelCanvas, 0, 0, miniMap.width, miniMap.height);
   }
 
-  gridCtx.stroke();
-}
+  // ======================
+  // DIBUJO Y BORRADOR
+  // ======================
+  let isErasing = false;
+  let isDrawing = false;
 
-// ======================
-// MINIMAPA
-// ======================
-function updateMiniMap() {
-  miniCtx.clearRect(0, 0, miniMap.width, miniMap.height);
-  miniCtx.drawImage(pixelCanvas, 0, 0, miniMap.width, miniMap.height);
-}
+  pixelCanvas.addEventListener("mousedown", (e) => {
+    const rect = pixelCanvas.getBoundingClientRect();
+    const cellSize = pixelCanvas.width / gridSize;
+    const x = Math.floor((e.clientX - rect.left) / cellSize);
+    const y = Math.floor((e.clientY - rect.top) / cellSize);
 
-// ======================
-// DIBUJO Y BORRADOR
-// ======================
-let isErasing = false;
-let isDrawing = false;
+    if (currentTool === "fill") {
+      saveState(); // guardamos antes de rellenar
+      bucketFill(x, y, currentColor);
+      return;
+    }
 
-pixelCanvas.addEventListener("mousedown", (e) => {
-  const rect = pixelCanvas.getBoundingClientRect();
-  const cellSize = pixelCanvas.width / gridSize;
-  const x = Math.floor((e.clientX - rect.left) / cellSize);
-  const y = Math.floor((e.clientY - rect.top) / cellSize);
+    // lápiz o borrador
+    if (currentTool === "pencil" || currentTool === "eraser") {
+      saveState();
+      drawing = true;
+      lastPos = null;
+      drawPixel(e);
+    }
+  });
 
-  if (currentTool === "fill") {
-    saveState(); // guardamos antes de rellenar
-    bucketFill(x, y, currentColor);
-    return;
-  }
+  pixelCanvas.addEventListener("mousemove", (e) => {
+    if (isDrawing) drawOrErase(e);
+  });
 
-  // lápiz o borrador
-  if (currentTool === "pencil" || currentTool === "eraser") {
+  pixelCanvas.addEventListener("mouseup", () => {
+    isDrawing = false;
     saveState();
-    drawing = true;
-    lastPos = null;
-    drawPixel(e);
+    updateMiniMap();
+  });
+
+  pixelCanvas.addEventListener("mouseleave", () => {
+    isDrawing = false;
+  });
+
+  function drawOrErase(e) {
+    const rect = pixelCanvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    const cellSize = Math.floor(pixelCanvas.width / gridSize);
+    const px = Math.floor(x / cellSize) * cellSize;
+    const py = Math.floor(y / cellSize) * cellSize;
+
+    if (isErasing) {
+      ctx.clearRect(px, py, cellSize, cellSize);
+    } else {
+      ctx.fillStyle = currentColor;
+      ctx.fillRect(px, py, cellSize, cellSize);
+    }
+
+    updateMiniMap();
   }
-});
 
-pixelCanvas.addEventListener("mousemove", (e) => {
-  if (isDrawing) drawOrErase(e);
-});
-
-pixelCanvas.addEventListener("mouseup", () => {
-  isDrawing = false;
+  // ======================
+  // INICIO
+  // ======================
+  drawGrid();
+  updateMiniMap();
   saveState();
-  updateMiniMap();
-});
 
-pixelCanvas.addEventListener("mouseleave", () => {
-  isDrawing = false;
-});
-
-function drawOrErase(e) {
-  const rect = pixelCanvas.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
-
-  const cellSize = Math.floor(pixelCanvas.width / gridSize);
-  const px = Math.floor(x / cellSize) * cellSize;
-  const py = Math.floor(y / cellSize) * cellSize;
-
-  if (isErasing) {
-    ctx.clearRect(px, py, cellSize, cellSize);
-  } else {
-    ctx.fillStyle = currentColor;
-    ctx.fillRect(px, py, cellSize, cellSize);
-  }
-
-  updateMiniMap();
-}
-
-// ======================
-// INICIO
-// ======================
-drawGrid();
-updateMiniMap();
-saveState();
-
-
-
-//==========================
-/// zoom
-//==========================
-
-
+  //==========================
+  /// zoom
+  //==========================
 
   // ======================
   // HISTORIAL: Save / Undo / Redo
@@ -156,7 +144,9 @@ saveState();
   function saveState() {
     try {
       if (history.length >= maxHistory) history.shift();
-      history.push(ctx.getImageData(0, 0, pixelCanvas.width, pixelCanvas.height));
+      history.push(
+        ctx.getImageData(0, 0, pixelCanvas.width, pixelCanvas.height)
+      );
       redoStack = [];
     } catch (err) {
       console.warn("saveState fallo:", err);
@@ -166,7 +156,9 @@ saveState();
   function undo() {
     if (history.length === 0) return;
     try {
-      redoStack.push(ctx.getImageData(0, 0, pixelCanvas.width, pixelCanvas.height));
+      redoStack.push(
+        ctx.getImageData(0, 0, pixelCanvas.width, pixelCanvas.height)
+      );
       const prev = history.pop();
       ctx.putImageData(prev, 0, 0);
     } catch (err) {
@@ -177,7 +169,9 @@ saveState();
   function redo() {
     if (redoStack.length === 0) return;
     try {
-      history.push(ctx.getImageData(0, 0, pixelCanvas.width, pixelCanvas.height));
+      history.push(
+        ctx.getImageData(0, 0, pixelCanvas.width, pixelCanvas.height)
+      );
       const next = redoStack.pop();
       ctx.putImageData(next, 0, 0);
     } catch (err) {
@@ -191,26 +185,27 @@ saveState();
   if (undoBtn) undoBtn.addEventListener("click", undo);
   if (redoBtn) redoBtn.addEventListener("click", redo);
 
-
-    // ======================
+  // ======================
   // LIMPIAR LIENZO
   // ======================
   const clearBtn = document.getElementById("clearCanvas");
-if (clearBtn) {
-  clearBtn.addEventListener("click", () => {
-    const confirmar = confirm("⚠️ Esto borrará todo el lienzo. ¿Seguro que quieres continuar?");
-    if (confirmar) {
-      // Guardar el estado actual en el historial ANTES de limpiar
-      saveState();
+  if (clearBtn) {
+    clearBtn.addEventListener("click", () => {
+      const confirmar = confirm(
+        "⚠️ Esto borrará todo el lienzo. ¿Seguro que quieres continuar?"
+      );
+      if (confirmar) {
+        // Guardar el estado actual en el historial ANTES de limpiar
+        saveState();
 
-      // Limpiar el lienzo
-      ctx.clearRect(0, 0, pixelCanvas.width, pixelCanvas.height);
+        // Limpiar el lienzo
+        ctx.clearRect(0, 0, pixelCanvas.width, pixelCanvas.height);
 
-      // Guardar el lienzo vacío como nuevo estado
-      saveState();
-    }
-  });
-}
+        // Guardar el lienzo vacío como nuevo estado
+        saveState();
+      }
+    });
+  }
 
   // ======================
   // PANEL DE CONFIGURACIÓN
@@ -239,54 +234,54 @@ if (clearBtn) {
   // CAMBIO DE GRILLA CON CONFIRMACIÓN
   // ======================
   gridInput.addEventListener("change", (e) => {
-  let nuevoValor = parseInt(e.target.value);
+    let nuevoValor = parseInt(e.target.value);
 
-  // límites
-  if (nuevoValor < 2) nuevoValor = 2;
-  if (nuevoValor > 256) nuevoValor = 256;
+    // límites
+    if (nuevoValor < 2) nuevoValor = 2;
+    if (nuevoValor > 256) nuevoValor = 256;
 
-  const canvasSize = pixelCanvas.width; // asumimos cuadrado 512x512
+    const canvasSize = pixelCanvas.width; // asumimos cuadrado 512x512
 
-  // buscar divisores exactos del canvas
-  let validSizes = [];
-  for (let i = 1; i <= canvasSize; i++) {
-    if (canvasSize % i === 0) {
-      validSizes.push(i);
+    // buscar divisores exactos del canvas
+    let validSizes = [];
+    for (let i = 1; i <= canvasSize; i++) {
+      if (canvasSize % i === 0) {
+        validSizes.push(i);
+      }
     }
-  }
 
-  // elegir el valor válido más cercano
-  let masCercano = validSizes.reduce((a, b) =>
-    Math.abs(b - nuevoValor) < Math.abs(a - nuevoValor) ? b : a
-  );
+    // elegir el valor válido más cercano
+    let masCercano = validSizes.reduce((a, b) =>
+      Math.abs(b - nuevoValor) < Math.abs(a - nuevoValor) ? b : a
+    );
 
-  const confirmar = confirm(
-    "⚠️ Cambiar el tamaño reiniciará tu dibujo. ¿Quieres continuar?"
-  );
-  if (confirmar) {
-    gridSize = masCercano;
-    e.target.value = gridSize; // actualizar input al valor válido
+    const confirmar = confirm(
+      "⚠️ Cambiar el tamaño reiniciará tu dibujo. ¿Quieres continuar?"
+    );
+    if (confirmar) {
+      gridSize = masCercano;
+      e.target.value = gridSize; // actualizar input al valor válido
 
-    // limpiar lienzo
-    ctx.clearRect(0, 0, pixelCanvas.width, pixelCanvas.height);
+      // limpiar lienzo
+      ctx.clearRect(0, 0, pixelCanvas.width, pixelCanvas.height);
 
-    // reiniciar historial
-    history = [];
-    redoStack = [];
+      // reiniciar historial
+      history = [];
+      redoStack = [];
 
-    // redibujar rejilla
-    drawGrid();
+      // redibujar rejilla
+      drawGrid();
 
-    // guardar estado en blanco como punto inicial
-    saveState();
-  } else {
-    // volver al valor anterior
-    e.target.value = gridSize;
-  }
-});
+      // guardar estado en blanco como punto inicial
+      saveState();
+    } else {
+      // volver al valor anterior
+      e.target.value = gridSize;
+    }
+  });
 
-drawGrid(); // dibuja la grilla al cargar
-saveState(); // guardar estado inicial del canvas
+  drawGrid(); // dibuja la grilla al cargar
+  saveState(); // guardar estado inicial del canvas
 
   // ======================
   // MENÚ GENERAL MOVIBLE
@@ -294,7 +289,8 @@ saveState(); // guardar estado inicial del canvas
   const menu = document.querySelector(".herramientasPixelForge");
 
   let menuIsDragging = false;
-  let menuOffsetX = 0, menuOffsetY = 0;
+  let menuOffsetX = 0,
+    menuOffsetY = 0;
 
   menu.addEventListener("mousedown", (e) => {
     menuIsDragging = true;
@@ -360,7 +356,8 @@ saveState(); // guardar estado inicial del canvas
   const colorPicker = document.getElementById("colorPicker");
 
   let pencilDragging = false;
-  let pencilOffsetX = 0, pencilOffsetY = 0;
+  let pencilOffsetX = 0,
+    pencilOffsetY = 0;
 
   pencilBtn.addEventListener("click", () => {
     currentTool = "pencil";
@@ -388,7 +385,8 @@ saveState(); // guardar estado inicial del canvas
     const minLeft = window.scrollX;
     const maxLeft = window.scrollX + window.innerWidth - pencilMenu.offsetWidth;
     const minTop = window.scrollY;
-    const maxTop = window.scrollY + window.innerHeight - pencilMenu.offsetHeight;
+    const maxTop =
+      window.scrollY + window.innerHeight - pencilMenu.offsetHeight;
 
     newLeft = Math.max(minLeft, Math.min(maxLeft, newLeft));
     newTop = Math.max(minTop, Math.min(maxTop, newTop));
@@ -416,59 +414,59 @@ saveState(); // guardar estado inicial del canvas
     currentColor = e.target.value;
   });
 
-function drawPixel(e) {
-  // <--- ADD: si estamos seleccionando para la lupa, no dibujar
-  if (window.__zoomSelecting) return;
+  function drawPixel(e) {
+    // <--- ADD: si estamos seleccionando para la lupa, no dibujar
+    if (window.__zoomSelecting) return;
 
-  if (!drawing) return;
+    if (!drawing) return;
 
-  const rect = pixelCanvas.getBoundingClientRect();
-  const cellSize = pixelCanvas.width / gridSize;
+    const rect = pixelCanvas.getBoundingClientRect();
+    const cellSize = pixelCanvas.width / gridSize;
 
-  let x = Math.floor((e.clientX - rect.left) / cellSize);
-  let y = Math.floor((e.clientY - rect.top) / cellSize);
+    let x = Math.floor((e.clientX - rect.left) / cellSize);
+    let y = Math.floor((e.clientY - rect.top) / cellSize);
 
-  for (let i = 0; i < currentBrush; i++) {
-    for (let j = 0; j < currentBrush; j++) {
-      let drawX = (x + i) * cellSize;
-      let drawY = (y + j) * cellSize;
-      if (drawX < pixelCanvas.width && drawY < pixelCanvas.height) {
-        if (currentTool === "pencil") {
-          ctx.fillStyle = currentColor;
-          ctx.fillRect(drawX, drawY, cellSize, cellSize);
-        } else if (currentTool === "eraser") {
-          ctx.clearRect(drawX, drawY, cellSize, cellSize);
+    for (let i = 0; i < currentBrush; i++) {
+      for (let j = 0; j < currentBrush; j++) {
+        let drawX = (x + i) * cellSize;
+        let drawY = (y + j) * cellSize;
+        if (drawX < pixelCanvas.width && drawY < pixelCanvas.height) {
+          if (currentTool === "pencil") {
+            ctx.fillStyle = currentColor;
+            ctx.fillRect(drawX, drawY, cellSize, cellSize);
+          } else if (currentTool === "eraser") {
+            ctx.clearRect(drawX, drawY, cellSize, cellSize);
+          }
         }
       }
     }
-  }
 
-  // mantener el trazo continuo (interpolación entre puntos)
-  if (lastPos) {
-    let dx = x - lastPos.x;
-    let dy = y - lastPos.y;
-    const steps = Math.max(Math.abs(dx), Math.abs(dy));
-    for (let step = 1; step < steps; step++) {
-      let ix = lastPos.x + Math.round((dx * step) / steps);
-      let iy = lastPos.y + Math.round((dy * step) / steps);
-      for (let i = 0; i < currentBrush; i++) {
-        for (let j = 0; j < currentBrush; j++) {
-          let drawX = (ix + i) * cellSize;
-          let drawY = (iy + j) * cellSize;
-          if (drawX < pixelCanvas.width && drawY < pixelCanvas.height) {
-            if (currentTool === "pencil") {
-              ctx.fillStyle = currentColor;
-              ctx.fillRect(drawX, drawY, cellSize, cellSize);
-            } else if (currentTool === "eraser") {
-              ctx.clearRect(drawX, drawY, cellSize, cellSize);
+    // mantener el trazo continuo (interpolación entre puntos)
+    if (lastPos) {
+      let dx = x - lastPos.x;
+      let dy = y - lastPos.y;
+      const steps = Math.max(Math.abs(dx), Math.abs(dy));
+      for (let step = 1; step < steps; step++) {
+        let ix = lastPos.x + Math.round((dx * step) / steps);
+        let iy = lastPos.y + Math.round((dy * step) / steps);
+        for (let i = 0; i < currentBrush; i++) {
+          for (let j = 0; j < currentBrush; j++) {
+            let drawX = (ix + i) * cellSize;
+            let drawY = (iy + j) * cellSize;
+            if (drawX < pixelCanvas.width && drawY < pixelCanvas.height) {
+              if (currentTool === "pencil") {
+                ctx.fillStyle = currentColor;
+                ctx.fillRect(drawX, drawY, cellSize, cellSize);
+              } else if (currentTool === "eraser") {
+                ctx.clearRect(drawX, drawY, cellSize, cellSize);
+              }
             }
           }
         }
       }
     }
+    lastPos = { x, y };
   }
-  lastPos = { x, y };
-}
 
   // ======= BOTÓN FILL (Rellenar) =======
   const fillBtn = document.getElementById("fillTool");
@@ -502,8 +500,14 @@ function drawPixel(e) {
   });
 
   pixelCanvas.addEventListener("mousemove", drawPixel);
-  pixelCanvas.addEventListener("mouseup", () => { drawing = false; lastPos = null; });
-  pixelCanvas.addEventListener("mouseleave", () => { drawing = false; lastPos = null; });
+  pixelCanvas.addEventListener("mouseup", () => {
+    drawing = false;
+    lastPos = null;
+  });
+  pixelCanvas.addEventListener("mouseleave", () => {
+    drawing = false;
+    lastPos = null;
+  });
 
   // ======================
   // CURSOR PIXEL
@@ -543,7 +547,7 @@ function drawPixel(e) {
   // HELPER: COLORES Y PIXEL CELDA
   // ======================
   function hexToRgba(hex) {
-    if (!hex) return [0,0,0,255];
+    if (!hex) return [0, 0, 0, 255];
     hex = hex.replace("#", "");
     if (hex.length === 3) {
       const r = parseInt(hex[0] + hex[0], 16);
@@ -558,7 +562,7 @@ function drawPixel(e) {
       return [r, g, b, 255];
     }
     // fallback
-    return [0,0,0,255];
+    return [0, 0, 0, 255];
   }
 
   function colorsMatch(a, b) {
@@ -575,7 +579,7 @@ function drawPixel(e) {
       imgData.data[idx],
       imgData.data[idx + 1],
       imgData.data[idx + 2],
-      imgData.data[idx + 3]
+      imgData.data[idx + 3],
     ];
   }
 
@@ -602,38 +606,45 @@ function drawPixel(e) {
   // ======================
   // BUCKET (FLOOD FILL) por CELDA
   // ======================
-function bucketFill(cellX, cellY, fillHex) {
-  const cellSize = pixelCanvas.width / gridSize;
-  const imgData = ctx.getImageData(0, 0, pixelCanvas.width, pixelCanvas.height);
-  const fillRGBA = hexToRgba(fillHex);
+  function bucketFill(cellX, cellY, fillHex) {
+    const cellSize = pixelCanvas.width / gridSize;
+    const imgData = ctx.getImageData(
+      0,
+      0,
+      pixelCanvas.width,
+      pixelCanvas.height
+    );
+    const fillRGBA = hexToRgba(fillHex);
 
-  const startColor = getCellCenterColor(imgData, cellX, cellY);
-  if (colorsMatch(startColor, fillRGBA)) return; // ya tiene el color
+    const startColor = getCellCenterColor(imgData, cellX, cellY);
+    if (colorsMatch(startColor, fillRGBA)) return; // ya tiene el color
 
-  const stack = [[cellX, cellY]];
-  const visited = Array.from({ length: gridSize }, () => Array(gridSize).fill(false));
+    const stack = [[cellX, cellY]];
+    const visited = Array.from({ length: gridSize }, () =>
+      Array(gridSize).fill(false)
+    );
 
-  while (stack.length) {
-    const [x, y] = stack.pop();
-    if (x < 0 || y < 0 || x >= gridSize || y >= gridSize) continue;
-    if (visited[y][x]) continue;
+    while (stack.length) {
+      const [x, y] = stack.pop();
+      if (x < 0 || y < 0 || x >= gridSize || y >= gridSize) continue;
+      if (visited[y][x]) continue;
 
-    const currentColor = getCellCenterColor(imgData, x, y);
-    if (!colorsMatch(currentColor, startColor)) continue; // límite de la figura
+      const currentColor = getCellCenterColor(imgData, x, y);
+      if (!colorsMatch(currentColor, startColor)) continue; // límite de la figura
 
-    setCellColorInImageData(imgData, x, y, fillRGBA);
-    visited[y][x] = true;
+      setCellColorInImageData(imgData, x, y, fillRGBA);
+      visited[y][x] = true;
 
-    // solo vecinos 4-direcciones
-    stack.push([x + 1, y]);
-    stack.push([x - 1, y]);
-    stack.push([x, y + 1]);
-    stack.push([x, y - 1]);
+      // solo vecinos 4-direcciones
+      stack.push([x + 1, y]);
+      stack.push([x - 1, y]);
+      stack.push([x, y + 1]);
+      stack.push([x, y - 1]);
+    }
+
+    ctx.putImageData(imgData, 0, 0);
+    updateMiniMap();
   }
-
-  ctx.putImageData(imgData, 0, 0);
-  updateMiniMap();
-}
 
   // ======================
   // EXPORTAR IMAGEN
@@ -645,7 +656,12 @@ function bucketFill(cellX, cellY, fillHex) {
     const exportCtx = exportCanvas.getContext("2d");
 
     const cellSize = pixelCanvas.width / gridSize;
-    const imgData = ctx.getImageData(0, 0, pixelCanvas.width, pixelCanvas.height);
+    const imgData = ctx.getImageData(
+      0,
+      0,
+      pixelCanvas.width,
+      pixelCanvas.height
+    );
 
     for (let y = 0; y < gridSize; y++) {
       for (let x = 0; x < gridSize; x++) {
@@ -661,7 +677,8 @@ function bucketFill(cellX, cellY, fillHex) {
       }
     }
 
-    const fileName = prompt("Ingrese el nombre del archivo:", "mi_dibujo") || "mi_dibujo";
+    const fileName =
+      prompt("Ingrese el nombre del archivo:", "mi_dibujo") || "mi_dibujo";
 
     const link = document.createElement("a");
     link.download = `${fileName}.png`;
@@ -680,7 +697,12 @@ function bucketFill(cellX, cellY, fillHex) {
     exportCtx.fillRect(0, 0, gridSize, gridSize);
 
     const cellSize = pixelCanvas.width / gridSize;
-    const imgData = ctx.getImageData(0, 0, pixelCanvas.width, pixelCanvas.height);
+    const imgData = ctx.getImageData(
+      0,
+      0,
+      pixelCanvas.width,
+      pixelCanvas.height
+    );
 
     for (let y = 0; y < gridSize; y++) {
       for (let x = 0; x < gridSize; x++) {
@@ -696,7 +718,8 @@ function bucketFill(cellX, cellY, fillHex) {
       }
     }
 
-    const fileName = prompt("Ingrese el nombre del archivo:", "mi_dibujo") || "mi_dibujo";
+    const fileName =
+      prompt("Ingrese el nombre del archivo:", "mi_dibujo") || "mi_dibujo";
 
     const link = document.createElement("a");
     link.download = `${fileName}.jpg`;
@@ -706,7 +729,12 @@ function bucketFill(cellX, cellY, fillHex) {
 
   function exportSVG() {
     const cellSize = pixelCanvas.width / gridSize;
-    const imgData = ctx.getImageData(0, 0, pixelCanvas.width, pixelCanvas.height);
+    const imgData = ctx.getImageData(
+      0,
+      0,
+      pixelCanvas.width,
+      pixelCanvas.height
+    );
 
     let svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="${gridSize}" height="${gridSize}" shape-rendering="crispEdges">`;
 
@@ -721,7 +749,9 @@ function bucketFill(cellX, cellY, fillHex) {
         const a = imgData.data[idx + 3] / 255;
 
         if (a > 0) {
-          const hex = `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
+          const hex = `#${((1 << 24) + (r << 16) + (g << 8) + b)
+            .toString(16)
+            .slice(1)}`;
           svgContent += `<rect x="${x}" y="${y}" width="1" height="1" fill="${hex}" fill-opacity="${a}"/>`;
         }
       }
@@ -730,7 +760,8 @@ function bucketFill(cellX, cellY, fillHex) {
     svgContent += `</svg>`;
     const blob = new Blob([svgContent], { type: "image/svg+xml" });
 
-    const fileName = prompt("Ingrese el nombre del archivo:", "mi_dibujo") || "mi_dibujo";
+    const fileName =
+      prompt("Ingrese el nombre del archivo:", "mi_dibujo") || "mi_dibujo";
 
     const link = document.createElement("a");
     link.download = `${fileName}.svg`;
@@ -751,759 +782,837 @@ function bucketFill(cellX, cellY, fillHex) {
     if (format === "png") exportPNG();
     else if (format === "jpg") exportJPG();
     else if (format === "svg") exportSVG();
-    
   });
 
   // Botón: Guardar en tamaño real (512x512)
-document.getElementById("saveBtnRealSize").addEventListener("click", () => {
-  const format = document.getElementById("saveOptions").value;
+  document.getElementById("saveBtnRealSize").addEventListener("click", () => {
+    const format = document.getElementById("saveOptions").value;
 
-  if (!format) {
-    alert("Por favor selecciona un formato de exportación.");
-    return;
-  }
+    if (!format) {
+      alert("Por favor selecciona un formato de exportación.");
+      return;
+    }
 
-  if (format === "png") {
-    const link = document.createElement("a");
-    link.download = "canvas_real.png";
-    link.href = pixelCanvas.toDataURL("image/png");
-    link.click();
-
-  } else if (format === "jpg") {
-    const link = document.createElement("a");
-    link.download = "canvas_real.jpg";
-    link.href = pixelCanvas.toDataURL("image/jpeg", 1.0); // calidad máxima
-    link.click();
-
-  } else if (format === "svg") {
-    // Convertir el canvas a SVG básico con imagen embebida en base64
-    const svgData = `
+    if (format === "png") {
+      const link = document.createElement("a");
+      link.download = "canvas_real.png";
+      link.href = pixelCanvas.toDataURL("image/png");
+      link.click();
+    } else if (format === "jpg") {
+      const link = document.createElement("a");
+      link.download = "canvas_real.jpg";
+      link.href = pixelCanvas.toDataURL("image/jpeg", 1.0); // calidad máxima
+      link.click();
+    } else if (format === "svg") {
+      // Convertir el canvas a SVG básico con imagen embebida en base64
+      const svgData = `
       <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512">
-        <image href="${pixelCanvas.toDataURL("image/png")}" width="512" height="512"/>
+        <image href="${pixelCanvas.toDataURL(
+          "image/png"
+        )}" width="512" height="512"/>
       </svg>
     `;
-    const blob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
-    const link = document.createElement("a");
-    link.download = "canvas_real.svg";
-    link.href = URL.createObjectURL(blob);
-    link.click();
-    URL.revokeObjectURL(link.href);
-  }
-});
+      const blob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
+      const link = document.createElement("a");
+      link.download = "canvas_real.svg";
+      link.href = URL.createObjectURL(blob);
+      link.click();
+      URL.revokeObjectURL(link.href);
+    }
+  });
 
+  // ======================
+  // ATAJOS DE TECLADO: Ctrl/Cmd + Z y Y
+  // ======================
+  document.addEventListener("keydown", (e) => {
+    const isUndo = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z";
+    const isRedo = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y";
 
-
-// ======================
-// ATAJOS DE TECLADO: Ctrl/Cmd + Z y Y
-// ======================
-document.addEventListener("keydown", (e) => {
-  const isUndo = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z";
-  const isRedo = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y";
-
-  if (isUndo) {
-    e.preventDefault();
-    undo();
-  }
-  if (isRedo) {
-    e.preventDefault();
-    redo();
-  }
-
-});
-
-
+    if (isUndo) {
+      e.preventDefault();
+      undo();
+    }
+    if (isRedo) {
+      e.preventDefault();
+      redo();
+    }
+  });
 
   // ======================
   // Menu figuras
   // ======================
- // Mostrar/ocultar el menú al hacer clic en el botón
-    const figuresBtn = document.getElementById("figuresBtn");
-    const figuresMenu = document.getElementById("figuresMenu");
+  // Mostrar/ocultar el menú al hacer clic en el botón
+  const figuresBtn = document.getElementById("figuresBtn");
+  const figuresMenu = document.getElementById("figuresMenu");
 
-    figuresBtn.addEventListener("click", () => {
-      figuresMenu.style.display =
-        figuresMenu.style.display === "block" ? "none" : "block";
-    });
+  figuresBtn.addEventListener("click", () => {
+    figuresMenu.style.display =
+      figuresMenu.style.display === "block" ? "none" : "block";
+  });
 
-    // Función para hacer el menú movible con límite inferior
-    function makeMenuDraggable(menuId) {
-      const menu = document.getElementById(menuId);
-      const header = menu.querySelector(".menuHeader");
+  // Función para hacer el menú movible con límite inferior
+  function makeMenuDraggable(menuId) {
+    const menu = document.getElementById(menuId);
+    const header = menu.querySelector(".menuHeader");
 
-      let offsetX = 0, offsetY = 0, startX = 0, startY = 0;
+    let offsetX = 0,
+      offsetY = 0,
+      startX = 0,
+      startY = 0;
 
-      header.addEventListener("mousedown", dragMouseDown);
+    header.addEventListener("mousedown", dragMouseDown);
 
-      function dragMouseDown(e) {
-        e.preventDefault();
-        startX = e.clientX;
-        startY = e.clientY;
-        document.addEventListener("mouseup", closeDragElement);
-        document.addEventListener("mousemove", elementDrag);
-      }
-
-      function elementDrag(e) {
-        e.preventDefault();
-        offsetX = startX - e.clientX;
-        offsetY = startY - e.clientY;
-        startX = e.clientX;
-        startY = e.clientY;
-
-        let newLeft = menu.offsetLeft - offsetX;
-        let newTop = menu.offsetTop - offsetY;
-
-        // 🔹 Límites horizontales
-        const maxLeft = window.innerWidth - menu.offsetWidth;
-        if (newLeft < 0) newLeft = 0;
-        if (newLeft > maxLeft) newLeft = maxLeft;
-
-        // 🔹 Límite superior
-        if (newTop < 0) newTop = 0;
-
-        // 🔹 Límite inferior (final del documento)
-        const docHeight = document.documentElement.scrollHeight;
-        const maxTop = docHeight - menu.offsetHeight;
-        if (newTop > maxTop) newTop = maxTop;
-
-        menu.style.left = newLeft + "px";
-        menu.style.top = newTop + "px";
-      }
-
-      function closeDragElement() {
-        document.removeEventListener("mouseup", closeDragElement);
-        document.removeEventListener("mousemove", elementDrag);
-      }
+    function dragMouseDown(e) {
+      e.preventDefault();
+      startX = e.clientX;
+      startY = e.clientY;
+      document.addEventListener("mouseup", closeDragElement);
+      document.addEventListener("mousemove", elementDrag);
     }
 
-    // Activamos el sistema en el menú de figuras
-    makeMenuDraggable("figuresMenu");
+    function elementDrag(e) {
+      e.preventDefault();
+      offsetX = startX - e.clientX;
+      offsetY = startY - e.clientY;
+      startX = e.clientX;
+      startY = e.clientY;
 
-// == CÍRCULO/ÓVALO HUECO con preview mientras arrastras ==
-// (Pegar esto dentro de tu DOMContentLoaded, después de que exista pixelCanvas, ctx, gridSize, currentTool, currentColor y saveState())
+      let newLeft = menu.offsetLeft - offsetX;
+      let newTop = menu.offsetTop - offsetY;
 
-// activar la herramienta desde el botón (si no lo tienes ya)
-const circleOption = document.querySelector('[data-figure="circle"]');
-if (circleOption) {
-  circleOption.addEventListener("click", () => {
-    currentTool = "circle";
+      // 🔹 Límites horizontales
+      const maxLeft = window.innerWidth - menu.offsetWidth;
+      if (newLeft < 0) newLeft = 0;
+      if (newLeft > maxLeft) newLeft = maxLeft;
+
+      // 🔹 Límite superior
+      if (newTop < 0) newTop = 0;
+
+      // 🔹 Límite inferior (final del documento)
+      const docHeight = document.documentElement.scrollHeight;
+      const maxTop = docHeight - menu.offsetHeight;
+      if (newTop > maxTop) newTop = maxTop;
+
+      menu.style.left = newLeft + "px";
+      menu.style.top = newTop + "px";
+    }
+
+    function closeDragElement() {
+      document.removeEventListener("mouseup", closeDragElement);
+      document.removeEventListener("mousemove", elementDrag);
+    }
+  }
+
+  // Activamos el sistema en el menú de figuras
+  makeMenuDraggable("figuresMenu");
+
+  // == CÍRCULO/ÓVALO HUECO con preview mientras arrastras ==
+
+  // activar la herramienta desde el botón (si no lo tienes ya)
+  const circleOption = document.querySelector('[data-figure="circle"]');
+  if (circleOption) {
+    circleOption.addEventListener("click", () => {
+      currentTool = "circle";
+    });
+  }
+
+  let ellipseStart = null;
+  let isDrawingEllipse = false;
+  let previewImageData = null;
+
+  pixelCanvas.addEventListener("mousedown", (e) => {
+    if (currentTool !== "circle") return;
+
+    const rect = pixelCanvas.getBoundingClientRect();
+    const cellSize = pixelCanvas.width / gridSize;
+
+    // posición en CELDAS
+    const sx = Math.floor((e.clientX - rect.left) / cellSize);
+    const sy = Math.floor((e.clientY - rect.top) / cellSize);
+
+    ellipseStart = { x: sx, y: sy };
+    isDrawingEllipse = true;
+
+    // Guardar estado para undo y para preview
+    saveState();
+    previewImageData = ctx.getImageData(
+      0,
+      0,
+      pixelCanvas.width,
+      pixelCanvas.height
+    );
   });
-}
 
-let ellipseStart = null;
-let isDrawingEllipse = false;
-let previewImageData = null;
+  pixelCanvas.addEventListener("mousemove", (e) => {
+    if (!isDrawingEllipse || currentTool !== "circle" || !ellipseStart) return;
 
-pixelCanvas.addEventListener("mousedown", (e) => {
-  if (currentTool !== "circle") return;
+    const rect = pixelCanvas.getBoundingClientRect();
+    const cellSize = pixelCanvas.width / gridSize;
 
-  const rect = pixelCanvas.getBoundingClientRect();
-  const cellSize = pixelCanvas.width / gridSize;
+    const ex = Math.floor((e.clientX - rect.left) / cellSize);
+    const ey = Math.floor((e.clientY - rect.top) / cellSize);
 
-  // posición en CELDAS
-  const sx = Math.floor((e.clientX - rect.left) / cellSize);
-  const sy = Math.floor((e.clientY - rect.top) / cellSize);
-
-  ellipseStart = { x: sx, y: sy };
-  isDrawingEllipse = true;
-
-  // Guardar estado para undo y para preview
-  saveState();
-  previewImageData = ctx.getImageData(0, 0, pixelCanvas.width, pixelCanvas.height);
-});
-
-pixelCanvas.addEventListener("mousemove", (e) => {
-  if (!isDrawingEllipse || currentTool !== "circle" || !ellipseStart) return;
-
-  const rect = pixelCanvas.getBoundingClientRect();
-  const cellSize = pixelCanvas.width / gridSize;
-
-  const ex = Math.floor((e.clientX - rect.left) / cellSize);
-  const ey = Math.floor((e.clientY - rect.top) / cellSize);
-
-  // Restaurar estado original (antes del preview)
-  if (previewImageData) ctx.putImageData(previewImageData, 0, 0);
-
-  // Dibujar preview del contorno del óvalo en la grilla
-  ctx.fillStyle = currentColor;
-  drawEllipseOutlineCells(ellipseStart.x, ellipseStart.y, ex, ey, cellSize);
-});
-
-pixelCanvas.addEventListener("mouseup", (e) => {
-  if (!isDrawingEllipse || currentTool !== "circle" || !ellipseStart) return;
-
-  const rect = pixelCanvas.getBoundingClientRect();
-  const cellSize = pixelCanvas.width / gridSize;
-
-  const ex = Math.floor((e.clientX - rect.left) / cellSize);
-  const ey = Math.floor((e.clientY - rect.top) / cellSize);
-
-  // Restaurar (por si hay preview)
-  if (previewImageData) ctx.putImageData(previewImageData, 0, 0);
-
-  // Dibujar contorno final
-  ctx.fillStyle = currentColor;
-  drawEllipseOutlineCells(ellipseStart.x, ellipseStart.y, ex, ey, cellSize);
-
-  // limpiar estado de dibujo temporal
-  isDrawingEllipse = false;
-  ellipseStart = null;
-  previewImageData = null;
-});
-
-// Si el usuario sale del canvas mientras dibuja, cancelar dibujo (opcional)
-pixelCanvas.addEventListener("mouseleave", () => {
-  if (isDrawingEllipse) {
-    // restaurar y cancelar
+    // Restaurar estado original (antes del preview)
     if (previewImageData) ctx.putImageData(previewImageData, 0, 0);
+
+    // Dibujar preview del contorno del óvalo en la grilla
+    ctx.fillStyle = currentColor;
+    drawEllipseOutlineCells(ellipseStart.x, ellipseStart.y, ex, ey, cellSize);
+  });
+
+  pixelCanvas.addEventListener("mouseup", (e) => {
+    if (!isDrawingEllipse || currentTool !== "circle" || !ellipseStart) return;
+
+    const rect = pixelCanvas.getBoundingClientRect();
+    const cellSize = pixelCanvas.width / gridSize;
+
+    const ex = Math.floor((e.clientX - rect.left) / cellSize);
+    const ey = Math.floor((e.clientY - rect.top) / cellSize);
+
+    // Restaurar (por si hay preview)
+    if (previewImageData) ctx.putImageData(previewImageData, 0, 0);
+
+    // Dibujar contorno final
+    ctx.fillStyle = currentColor;
+    drawEllipseOutlineCells(ellipseStart.x, ellipseStart.y, ex, ey, cellSize);
+
+    // limpiar estado de dibujo temporal
     isDrawingEllipse = false;
     ellipseStart = null;
     previewImageData = null;
-  }
-});
-
-// ===== función que marca SOLO EL CONTORNO del óvalo en CELDAS =====
-function drawEllipseOutlineCells(x0, y0, x1, y1, cellSize) {
-  // centro y radios en coordenadas de celda (pueden ser fraccionales)
-  const cx = (x0 + x1) / 2;
-  const cy = (y0 + y1) / 2;
-  let rx = Math.abs(x1 - x0) / 2;
-  let ry = Math.abs(y1 - y0) / 2;
-
-  // si el "rect" es un punto, dibujar un solo píxel
-  if (rx < 0.5 && ry < 0.5) {
-    ctx.fillRect(x0 * cellSize, y0 * cellSize, cellSize, cellSize);
-    return;
-  }
-
-  // asegurar radios mínimos para evitar dividir entre cero
-  rx = Math.max(rx, 0.5);
-  ry = Math.max(ry, 0.5);
-
-  const minX = Math.max(0, Math.floor(cx - rx) - 1);
-  const maxX = Math.min(gridSize - 1, Math.ceil(cx + rx) + 1);
-  const minY = Math.max(0, Math.floor(cy - ry) - 1);
-  const maxY = Math.min(gridSize - 1, Math.ceil(cy + ry) + 1);
-
-  // Recorremos por X: calculamos y superior e inferior y pintamos ambos (mejora continuidad)
-  for (let xi = minX; xi <= maxX; xi++) {
-    const dx = xi - cx;
-    const val = 1 - (dx * dx) / (rx * rx);
-    if (val < 0) continue;
-    const yOff = ry * Math.sqrt(val);
-    const yTop = Math.round(cy - yOff);
-    const yBottom = Math.round(cy + yOff);
-
-    if (yTop >= minY && yTop <= maxY) {
-      ctx.fillRect(xi * cellSize, yTop * cellSize, cellSize, cellSize);
-    }
-    if (yBottom >= minY && yBottom <= maxY) {
-      ctx.fillRect(xi * cellSize, yBottom * cellSize, cellSize, cellSize);
-    }
-  }
-
-  // Recorremos por Y: calculamos x izquierdo y derecho y pintamos ambos (cubre huecos verticales)
-  for (let yi = minY; yi <= maxY; yi++) {
-    const dy = yi - cy;
-    const val = 1 - (dy * dy) / (ry * ry);
-    if (val < 0) continue;
-    const xOff = rx * Math.sqrt(val);
-    const xLeft = Math.round(cx - xOff);
-    const xRight = Math.round(cx + xOff);
-
-    if (xLeft >= minX && xLeft <= maxX) {
-      ctx.fillRect(xLeft * cellSize, yi * cellSize, cellSize, cellSize);
-    }
-    if (xRight >= minX && xRight <= maxX) {
-      ctx.fillRect(xRight * cellSize, yi * cellSize, cellSize, cellSize);
-    }
-  }
-}
-
-// == TRIÁNGULO HUECO con preview mientras arrastras ==
-// (Pegar dentro de tu DOMContentLoaded, después de que existan pixelCanvas, ctx, gridSize, currentTool, currentColor y saveState())
-
-// activar la herramienta desde el botón
-const triangleOption = document.querySelector('[data-figure="triangle"]');
-if (triangleOption) {
-  triangleOption.addEventListener("click", () => {
-    currentTool = "triangle";
   });
-}
 
-let triangleStart = null;
-let isDrawingTriangle = false;
-let previewImageDataTri = null;
+  // Si el usuario sale del canvas mientras dibuja, cancelar dibujo (opcional)
+  pixelCanvas.addEventListener("mouseleave", () => {
+    if (isDrawingEllipse) {
+      // restaurar y cancelar
+      if (previewImageData) ctx.putImageData(previewImageData, 0, 0);
+      isDrawingEllipse = false;
+      ellipseStart = null;
+      previewImageData = null;
+    }
+  });
 
-pixelCanvas.addEventListener("mousedown", (e) => {
-  if (currentTool !== "triangle") return;
+  // ===== función que marca SOLO EL CONTORNO del óvalo en CELDAS =====
+  function drawEllipseOutlineCells(x0, y0, x1, y1, cellSize) {
+    // centro y radios en coordenadas de celda (pueden ser fraccionales)
+    const cx = (x0 + x1) / 2;
+    const cy = (y0 + y1) / 2;
+    let rx = Math.abs(x1 - x0) / 2;
+    let ry = Math.abs(y1 - y0) / 2;
 
-  const rect = pixelCanvas.getBoundingClientRect();
-  const cellSize = pixelCanvas.width / gridSize;
+    // si el "rect" es un punto, dibujar un solo píxel
+    if (rx < 0.5 && ry < 0.5) {
+      ctx.fillRect(x0 * cellSize, y0 * cellSize, cellSize, cellSize);
+      return;
+    }
 
-  // posición en CELDAS
-  const sx = Math.floor((e.clientX - rect.left) / cellSize);
-  const sy = Math.floor((e.clientY - rect.top) / cellSize);
+    // asegurar radios mínimos para evitar dividir entre cero
+    rx = Math.max(rx, 0.5);
+    ry = Math.max(ry, 0.5);
 
-  triangleStart = { x: sx, y: sy };
-  isDrawingTriangle = true;
+    const minX = Math.max(0, Math.floor(cx - rx) - 1);
+    const maxX = Math.min(gridSize - 1, Math.ceil(cx + rx) + 1);
+    const minY = Math.max(0, Math.floor(cy - ry) - 1);
+    const maxY = Math.min(gridSize - 1, Math.ceil(cy + ry) + 1);
 
-  // Guardar estado para undo y preview
-  saveState();
-  previewImageDataTri = ctx.getImageData(0, 0, pixelCanvas.width, pixelCanvas.height);
-});
+    // Recorremos por X: calculamos y superior e inferior y pintamos ambos (mejora continuidad)
+    for (let xi = minX; xi <= maxX; xi++) {
+      const dx = xi - cx;
+      const val = 1 - (dx * dx) / (rx * rx);
+      if (val < 0) continue;
+      const yOff = ry * Math.sqrt(val);
+      const yTop = Math.round(cy - yOff);
+      const yBottom = Math.round(cy + yOff);
 
-pixelCanvas.addEventListener("mousemove", (e) => {
-  if (!isDrawingTriangle || currentTool !== "triangle" || !triangleStart) return;
+      if (yTop >= minY && yTop <= maxY) {
+        ctx.fillRect(xi * cellSize, yTop * cellSize, cellSize, cellSize);
+      }
+      if (yBottom >= minY && yBottom <= maxY) {
+        ctx.fillRect(xi * cellSize, yBottom * cellSize, cellSize, cellSize);
+      }
+    }
 
-  const rect = pixelCanvas.getBoundingClientRect();
-  const cellSize = pixelCanvas.width / gridSize;
+    // Recorremos por Y: calculamos x izquierdo y derecho y pintamos ambos (cubre huecos verticales)
+    for (let yi = minY; yi <= maxY; yi++) {
+      const dy = yi - cy;
+      const val = 1 - (dy * dy) / (ry * ry);
+      if (val < 0) continue;
+      const xOff = rx * Math.sqrt(val);
+      const xLeft = Math.round(cx - xOff);
+      const xRight = Math.round(cx + xOff);
 
-  const ex = Math.floor((e.clientX - rect.left) / cellSize);
-  const ey = Math.floor((e.clientY - rect.top) / cellSize);
+      if (xLeft >= minX && xLeft <= maxX) {
+        ctx.fillRect(xLeft * cellSize, yi * cellSize, cellSize, cellSize);
+      }
+      if (xRight >= minX && xRight <= maxX) {
+        ctx.fillRect(xRight * cellSize, yi * cellSize, cellSize, cellSize);
+      }
+    }
+  }
 
-  // Restaurar estado original (antes del preview)
-  if (previewImageDataTri) ctx.putImageData(previewImageDataTri, 0, 0);
+  // == TRIÁNGULO HUECO con preview mientras arrastras ==
 
-  // Dibujar preview del contorno del triángulo en la grilla
-  ctx.fillStyle = currentColor;
-  drawTriangleOutlineCells(triangleStart.x, triangleStart.y, ex, ey, cellSize);
-});
+  // activar la herramienta desde el botón
+  const triangleOption = document.querySelector('[data-figure="triangle"]');
+  if (triangleOption) {
+    triangleOption.addEventListener("click", () => {
+      currentTool = "triangle";
+    });
+  }
 
-pixelCanvas.addEventListener("mouseup", (e) => {
-  if (!isDrawingTriangle || currentTool !== "triangle" || !triangleStart) return;
+  let triangleStart = null;
+  let isDrawingTriangle = false;
+  let previewImageDataTri = null;
 
-  const rect = pixelCanvas.getBoundingClientRect();
-  const cellSize = pixelCanvas.width / gridSize;
+  pixelCanvas.addEventListener("mousedown", (e) => {
+    if (currentTool !== "triangle") return;
 
-  const ex = Math.floor((e.clientX - rect.left) / cellSize);
-  const ey = Math.floor((e.clientY - rect.top) / cellSize);
+    const rect = pixelCanvas.getBoundingClientRect();
+    const cellSize = pixelCanvas.width / gridSize;
 
-  // Restaurar (por si hay preview)
-  if (previewImageDataTri) ctx.putImageData(previewImageDataTri, 0, 0);
+    // posición en CELDAS
+    const sx = Math.floor((e.clientX - rect.left) / cellSize);
+    const sy = Math.floor((e.clientY - rect.top) / cellSize);
 
-  // Dibujar contorno final
-  ctx.fillStyle = currentColor;
-  drawTriangleOutlineCells(triangleStart.x, triangleStart.y, ex, ey, cellSize);
+    triangleStart = { x: sx, y: sy };
+    isDrawingTriangle = true;
 
-  // limpiar estado de dibujo temporal
-  isDrawingTriangle = false;
-  triangleStart = null;
-  previewImageDataTri = null;
-});
+    // Guardar estado para undo y preview
+    saveState();
+    previewImageDataTri = ctx.getImageData(
+      0,
+      0,
+      pixelCanvas.width,
+      pixelCanvas.height
+    );
+  });
 
-// cancelar si sale del canvas
-pixelCanvas.addEventListener("mouseleave", () => {
-  if (isDrawingTriangle) {
+  pixelCanvas.addEventListener("mousemove", (e) => {
+    if (!isDrawingTriangle || currentTool !== "triangle" || !triangleStart)
+      return;
+
+    const rect = pixelCanvas.getBoundingClientRect();
+    const cellSize = pixelCanvas.width / gridSize;
+
+    const ex = Math.floor((e.clientX - rect.left) / cellSize);
+    const ey = Math.floor((e.clientY - rect.top) / cellSize);
+
+    // Restaurar estado original (antes del preview)
     if (previewImageDataTri) ctx.putImageData(previewImageDataTri, 0, 0);
+
+    // Dibujar preview del contorno del triángulo en la grilla
+    ctx.fillStyle = currentColor;
+    drawTriangleOutlineCells(
+      triangleStart.x,
+      triangleStart.y,
+      ex,
+      ey,
+      cellSize
+    );
+  });
+
+  pixelCanvas.addEventListener("mouseup", (e) => {
+    if (!isDrawingTriangle || currentTool !== "triangle" || !triangleStart)
+      return;
+
+    const rect = pixelCanvas.getBoundingClientRect();
+    const cellSize = pixelCanvas.width / gridSize;
+
+    const ex = Math.floor((e.clientX - rect.left) / cellSize);
+    const ey = Math.floor((e.clientY - rect.top) / cellSize);
+
+    // Restaurar (por si hay preview)
+    if (previewImageDataTri) ctx.putImageData(previewImageDataTri, 0, 0);
+
+    // Dibujar contorno final
+    ctx.fillStyle = currentColor;
+    drawTriangleOutlineCells(
+      triangleStart.x,
+      triangleStart.y,
+      ex,
+      ey,
+      cellSize
+    );
+
+    // limpiar estado de dibujo temporal
     isDrawingTriangle = false;
     triangleStart = null;
     previewImageDataTri = null;
-  }
-});
-
-// ===== función que dibuja líneas entre celdas (Bresenham) =====
-function drawLineCells(x0, y0, x1, y1, cellSize) {
-  let x = x0, y = y0;
-  const dx = Math.abs(x1 - x0);
-  const sx = x0 < x1 ? 1 : -1;
-  const dy = -Math.abs(y1 - y0);
-  const sy = y0 < y1 ? 1 : -1;
-  let err = dx + dy;
-
-  while (true) {
-    if (x >= 0 && y >= 0 && x < gridSize && y < gridSize) {
-      ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
-    }
-    if (x === x1 && y === y1) break;
-    const e2 = 2 * err;
-    if (e2 >= dy) { err += dy; x += sx; }
-    if (e2 <= dx) { err += dx; y += sy; }
-  }
-}
-
-// ===== función que dibuja SOLO EL CONTORNO del triángulo en CELDAS =====
-function drawTriangleOutlineCells(x0, y0, x1, y1, cellSize) {
-  // Vértices: isósceles dentro del rectángulo formado por (x0,y0) y (x1,y1)
-  // Vértice superior en y0, base entre x0..x1 en y1
-  const topX = Math.round((x0 + x1) / 2);
-  const topY = y0;
-  const leftX = x0;
-  const leftY = y1;
-  const rightX = x1;
-  const rightY = y1;
-
-  // Dibujar las 3 aristas usando Bresenham en coordenadas de celda
-  drawLineCells(topX, topY, leftX, leftY, cellSize);
-  drawLineCells(topX, topY, rightX, rightY, cellSize);
-  drawLineCells(leftX, leftY, rightX, rightY, cellSize);
-}
-
-
-// == CUADRADO/RECTÁNGULO HUECO con preview mientras arrastras ==
-// (Pegar dentro de tu DOMContentLoaded, después de que existan pixelCanvas, ctx, gridSize, currentTool, currentColor y saveState())
-
-// activar la herramienta desde el botón
-const squareOption = document.querySelector('[data-figure="square"]');
-if (squareOption) {
-  squareOption.addEventListener("click", () => {
-    currentTool = "square";
   });
-}
 
-let squareStart = null;
-let isDrawingSquare = false;
-let previewImageDataSq = null;
+  // cancelar si sale del canvas
+  pixelCanvas.addEventListener("mouseleave", () => {
+    if (isDrawingTriangle) {
+      if (previewImageDataTri) ctx.putImageData(previewImageDataTri, 0, 0);
+      isDrawingTriangle = false;
+      triangleStart = null;
+      previewImageDataTri = null;
+    }
+  });
 
-pixelCanvas.addEventListener("mousedown", (e) => {
-  if (currentTool !== "square") return;
+  // ===== función que dibuja líneas entre celdas (Bresenham) =====
+  function drawLineCells(x0, y0, x1, y1, cellSize) {
+    let x = x0,
+      y = y0;
+    const dx = Math.abs(x1 - x0);
+    const sx = x0 < x1 ? 1 : -1;
+    const dy = -Math.abs(y1 - y0);
+    const sy = y0 < y1 ? 1 : -1;
+    let err = dx + dy;
 
-  const rect = pixelCanvas.getBoundingClientRect();
-  const cellSize = pixelCanvas.width / gridSize;
+    while (true) {
+      if (x >= 0 && y >= 0 && x < gridSize && y < gridSize) {
+        ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+      }
+      if (x === x1 && y === y1) break;
+      const e2 = 2 * err;
+      if (e2 >= dy) {
+        err += dy;
+        x += sx;
+      }
+      if (e2 <= dx) {
+        err += dx;
+        y += sy;
+      }
+    }
+  }
 
-  const sx = Math.floor((e.clientX - rect.left) / cellSize);
-  const sy = Math.floor((e.clientY - rect.top) / cellSize);
+  // ===== función que dibuja SOLO EL CONTORNO del triángulo en CELDAS =====
+  function drawTriangleOutlineCells(x0, y0, x1, y1, cellSize) {
+    // Vértices: isósceles dentro del rectángulo formado por (x0,y0) y (x1,y1)
+    // Vértice superior en y0, base entre x0..x1 en y1
+    const topX = Math.round((x0 + x1) / 2);
+    const topY = y0;
+    const leftX = x0;
+    const leftY = y1;
+    const rightX = x1;
+    const rightY = y1;
 
-  squareStart = { x: sx, y: sy };
-  isDrawingSquare = true;
+    // Dibujar las 3 aristas usando Bresenham en coordenadas de celda
+    drawLineCells(topX, topY, leftX, leftY, cellSize);
+    drawLineCells(topX, topY, rightX, rightY, cellSize);
+    drawLineCells(leftX, leftY, rightX, rightY, cellSize);
+  }
 
-  saveState();
-  previewImageDataSq = ctx.getImageData(0, 0, pixelCanvas.width, pixelCanvas.height);
-});
+  // == CUADRADO/RECTÁNGULO HUECO con preview mientras arrastras ==
 
-pixelCanvas.addEventListener("mousemove", (e) => {
-  if (!isDrawingSquare || currentTool !== "square" || !squareStart) return;
+  // activar la herramienta desde el botón
+  const squareOption = document.querySelector('[data-figure="square"]');
+  if (squareOption) {
+    squareOption.addEventListener("click", () => {
+      currentTool = "square";
+    });
+  }
 
-  const rect = pixelCanvas.getBoundingClientRect();
-  const cellSize = pixelCanvas.width / gridSize;
+  let squareStart = null;
+  let isDrawingSquare = false;
+  let previewImageDataSq = null;
 
-  const ex = Math.floor((e.clientX - rect.left) / cellSize);
-  const ey = Math.floor((e.clientY - rect.top) / cellSize);
+  pixelCanvas.addEventListener("mousedown", (e) => {
+    if (currentTool !== "square") return;
 
-  if (previewImageDataSq) ctx.putImageData(previewImageDataSq, 0, 0);
+    const rect = pixelCanvas.getBoundingClientRect();
+    const cellSize = pixelCanvas.width / gridSize;
 
-  ctx.fillStyle = currentColor;
-  drawSquareOutlineCells(squareStart.x, squareStart.y, ex, ey, cellSize);
-});
+    const sx = Math.floor((e.clientX - rect.left) / cellSize);
+    const sy = Math.floor((e.clientY - rect.top) / cellSize);
 
-pixelCanvas.addEventListener("mouseup", (e) => {
-  if (!isDrawingSquare || currentTool !== "square" || !squareStart) return;
+    squareStart = { x: sx, y: sy };
+    isDrawingSquare = true;
 
-  const rect = pixelCanvas.getBoundingClientRect();
-  const cellSize = pixelCanvas.width / gridSize;
+    saveState();
+    previewImageDataSq = ctx.getImageData(
+      0,
+      0,
+      pixelCanvas.width,
+      pixelCanvas.height
+    );
+  });
 
-  const ex = Math.floor((e.clientX - rect.left) / cellSize);
-  const ey = Math.floor((e.clientY - rect.top) / cellSize);
+  pixelCanvas.addEventListener("mousemove", (e) => {
+    if (!isDrawingSquare || currentTool !== "square" || !squareStart) return;
 
-  if (previewImageDataSq) ctx.putImageData(previewImageDataSq, 0, 0);
+    const rect = pixelCanvas.getBoundingClientRect();
+    const cellSize = pixelCanvas.width / gridSize;
 
-  ctx.fillStyle = currentColor;
-  drawSquareOutlineCells(squareStart.x, squareStart.y, ex, ey, cellSize);
+    const ex = Math.floor((e.clientX - rect.left) / cellSize);
+    const ey = Math.floor((e.clientY - rect.top) / cellSize);
 
-  isDrawingSquare = false;
-  squareStart = null;
-  previewImageDataSq = null;
-});
-
-pixelCanvas.addEventListener("mouseleave", () => {
-  if (isDrawingSquare) {
     if (previewImageDataSq) ctx.putImageData(previewImageDataSq, 0, 0);
+
+    ctx.fillStyle = currentColor;
+    drawSquareOutlineCells(squareStart.x, squareStart.y, ex, ey, cellSize);
+  });
+
+  pixelCanvas.addEventListener("mouseup", (e) => {
+    if (!isDrawingSquare || currentTool !== "square" || !squareStart) return;
+
+    const rect = pixelCanvas.getBoundingClientRect();
+    const cellSize = pixelCanvas.width / gridSize;
+
+    const ex = Math.floor((e.clientX - rect.left) / cellSize);
+    const ey = Math.floor((e.clientY - rect.top) / cellSize);
+
+    if (previewImageDataSq) ctx.putImageData(previewImageDataSq, 0, 0);
+
+    ctx.fillStyle = currentColor;
+    drawSquareOutlineCells(squareStart.x, squareStart.y, ex, ey, cellSize);
+
     isDrawingSquare = false;
     squareStart = null;
     previewImageDataSq = null;
-  }
-});
-
-// ===== función para dibujar el contorno de un cuadrado/rectángulo =====
-function drawSquareOutlineCells(x0, y0, x1, y1, cellSize) {
-  const minX = Math.min(x0, x1);
-  const maxX = Math.max(x0, x1);
-  const minY = Math.min(y0, y1);
-  const maxY = Math.max(y0, y1);
-
-  // líneas horizontales
-  for (let xi = minX; xi <= maxX; xi++) {
-    ctx.fillRect(xi * cellSize, minY * cellSize, cellSize, cellSize);
-    ctx.fillRect(xi * cellSize, maxY * cellSize, cellSize, cellSize);
-  }
-
-  // líneas verticales
-  for (let yi = minY; yi <= maxY; yi++) {
-    ctx.fillRect(minX * cellSize, yi * cellSize, cellSize, cellSize);
-    ctx.fillRect(maxX * cellSize, yi * cellSize, cellSize, cellSize);
-  }
-}
-
-// == LÍNEA RECTA con preview mientras arrastras ==
-// (Pegar dentro de tu DOMContentLoaded, después de que existan pixelCanvas, ctx, gridSize, currentTool, currentColor y saveState())
-
-// activar la herramienta desde el botón
-const lineOption = document.querySelector('[data-figure="line"]');
-if (lineOption) {
-  lineOption.addEventListener("click", () => {
-    currentTool = "line";
   });
-}
 
-let lineStart = null;
-let isDrawingLine = false;
-let previewImageDataLn = null;
+  pixelCanvas.addEventListener("mouseleave", () => {
+    if (isDrawingSquare) {
+      if (previewImageDataSq) ctx.putImageData(previewImageDataSq, 0, 0);
+      isDrawingSquare = false;
+      squareStart = null;
+      previewImageDataSq = null;
+    }
+  });
 
-pixelCanvas.addEventListener("mousedown", (e) => {
-  if (currentTool !== "line") return;
+  // ===== función para dibujar el contorno de un cuadrado/rectángulo =====
+  function drawSquareOutlineCells(x0, y0, x1, y1, cellSize) {
+    const minX = Math.min(x0, x1);
+    const maxX = Math.max(x0, x1);
+    const minY = Math.min(y0, y1);
+    const maxY = Math.max(y0, y1);
 
-  const rect = pixelCanvas.getBoundingClientRect();
-  const cellSize = pixelCanvas.width / gridSize;
+    // líneas horizontales
+    for (let xi = minX; xi <= maxX; xi++) {
+      ctx.fillRect(xi * cellSize, minY * cellSize, cellSize, cellSize);
+      ctx.fillRect(xi * cellSize, maxY * cellSize, cellSize, cellSize);
+    }
 
-  const sx = Math.floor((e.clientX - rect.left) / cellSize);
-  const sy = Math.floor((e.clientY - rect.top) / cellSize);
+    // líneas verticales
+    for (let yi = minY; yi <= maxY; yi++) {
+      ctx.fillRect(minX * cellSize, yi * cellSize, cellSize, cellSize);
+      ctx.fillRect(maxX * cellSize, yi * cellSize, cellSize, cellSize);
+    }
+  }
 
-  lineStart = { x: sx, y: sy };
-  isDrawingLine = true;
+  // == LÍNEA RECTA con preview mientras arrastras ==
 
-  saveState();
-  previewImageDataLn = ctx.getImageData(0, 0, pixelCanvas.width, pixelCanvas.height);
-});
+  // activar la herramienta desde el botón
+  const lineOption = document.querySelector('[data-figure="line"]');
+  if (lineOption) {
+    lineOption.addEventListener("click", () => {
+      currentTool = "line";
+    });
+  }
 
-pixelCanvas.addEventListener("mousemove", (e) => {
-  if (!isDrawingLine || currentTool !== "line" || !lineStart) return;
+  let lineStart = null;
+  let isDrawingLine = false;
+  let previewImageDataLn = null;
 
-  const rect = pixelCanvas.getBoundingClientRect();
-  const cellSize = pixelCanvas.width / gridSize;
+  pixelCanvas.addEventListener("mousedown", (e) => {
+    if (currentTool !== "line") return;
 
-  const ex = Math.floor((e.clientX - rect.left) / cellSize);
-  const ey = Math.floor((e.clientY - rect.top) / cellSize);
+    const rect = pixelCanvas.getBoundingClientRect();
+    const cellSize = pixelCanvas.width / gridSize;
 
-  if (previewImageDataLn) ctx.putImageData(previewImageDataLn, 0, 0);
+    const sx = Math.floor((e.clientX - rect.left) / cellSize);
+    const sy = Math.floor((e.clientY - rect.top) / cellSize);
 
-  ctx.fillStyle = currentColor;
-  drawLineCells(lineStart.x, lineStart.y, ex, ey, cellSize);
-});
+    lineStart = { x: sx, y: sy };
+    isDrawingLine = true;
 
-pixelCanvas.addEventListener("mouseup", (e) => {
-  if (!isDrawingLine || currentTool !== "line" || !lineStart) return;
+    saveState();
+    previewImageDataLn = ctx.getImageData(
+      0,
+      0,
+      pixelCanvas.width,
+      pixelCanvas.height
+    );
+  });
 
-  const rect = pixelCanvas.getBoundingClientRect();
-  const cellSize = pixelCanvas.width / gridSize;
+  pixelCanvas.addEventListener("mousemove", (e) => {
+    if (!isDrawingLine || currentTool !== "line" || !lineStart) return;
 
-  const ex = Math.floor((e.clientX - rect.left) / cellSize);
-  const ey = Math.floor((e.clientY - rect.top) / cellSize);
+    const rect = pixelCanvas.getBoundingClientRect();
+    const cellSize = pixelCanvas.width / gridSize;
 
-  if (previewImageDataLn) ctx.putImageData(previewImageDataLn, 0, 0);
+    const ex = Math.floor((e.clientX - rect.left) / cellSize);
+    const ey = Math.floor((e.clientY - rect.top) / cellSize);
 
-  ctx.fillStyle = currentColor;
-  drawLineCells(lineStart.x, lineStart.y, ex, ey, cellSize);
-
-  isDrawingLine = false;
-  lineStart = null;
-  previewImageDataLn = null;
-});
-
-pixelCanvas.addEventListener("mouseleave", () => {
-  if (isDrawingLine) {
     if (previewImageDataLn) ctx.putImageData(previewImageDataLn, 0, 0);
+
+    ctx.fillStyle = currentColor;
+    drawLineCells(lineStart.x, lineStart.y, ex, ey, cellSize);
+  });
+
+  pixelCanvas.addEventListener("mouseup", (e) => {
+    if (!isDrawingLine || currentTool !== "line" || !lineStart) return;
+
+    const rect = pixelCanvas.getBoundingClientRect();
+    const cellSize = pixelCanvas.width / gridSize;
+
+    const ex = Math.floor((e.clientX - rect.left) / cellSize);
+    const ey = Math.floor((e.clientY - rect.top) / cellSize);
+
+    if (previewImageDataLn) ctx.putImageData(previewImageDataLn, 0, 0);
+
+    ctx.fillStyle = currentColor;
+    drawLineCells(lineStart.x, lineStart.y, ex, ey, cellSize);
+
     isDrawingLine = false;
     lineStart = null;
     previewImageDataLn = null;
-  }
-});
+  });
 
-// ===== función para dibujar una línea recta con Bresenham =====
-function drawLineCells(x0, y0, x1, y1, cellSize) {
-  let dx = Math.abs(x1 - x0);
-  let dy = Math.abs(y1 - y0);
-  let sx = x0 < x1 ? 1 : -1;
-  let sy = y0 < y1 ? 1 : -1;
-  let err = dx - dy;
-
-  while (true) {
-    ctx.fillRect(x0 * cellSize, y0 * cellSize, cellSize, cellSize);
-
-    if (x0 === x1 && y0 === y1) break;
-    let e2 = 2 * err;
-    if (e2 > -dy) {
-      err -= dy;
-      x0 += sx;
+  pixelCanvas.addEventListener("mouseleave", () => {
+    if (isDrawingLine) {
+      if (previewImageDataLn) ctx.putImageData(previewImageDataLn, 0, 0);
+      isDrawingLine = false;
+      lineStart = null;
+      previewImageDataLn = null;
     }
-    if (e2 < dx) {
-      err += dx;
-      y0 += sy;
+  });
+
+  // ===== función para dibujar una línea recta con Bresenham =====
+  function drawLineCells(x0, y0, x1, y1, cellSize) {
+    let dx = Math.abs(x1 - x0);
+    let dy = Math.abs(y1 - y0);
+    let sx = x0 < x1 ? 1 : -1;
+    let sy = y0 < y1 ? 1 : -1;
+    let err = dx - dy;
+
+    while (true) {
+      ctx.fillRect(x0 * cellSize, y0 * cellSize, cellSize, cellSize);
+
+      if (x0 === x1 && y0 === y1) break;
+      let e2 = 2 * err;
+      if (e2 > -dy) {
+        err -= dy;
+        x0 += sx;
+      }
+      if (e2 < dx) {
+        err += dx;
+        y0 += sy;
+      }
     }
   }
-}
-
 
   // ======================
   //linea curva
   // ======================
 
   // == LÍNEA CURVA (reset + arreglo) ==
-// Pegar dentro de tu DOMContentLoaded después de que existan:
-// pixelCanvas, ctx, gridSize, currentTool, currentColor, drawLineCells y saveState()
 
-const curveOption = document.querySelector('[data-figure="curve"]');
-if (curveOption) {
-  curveOption.addEventListener("click", () => {
-    currentTool = "curve";
-  });
-}
-
-// estado
-let curveStart = null;
-let curveEnd = null;
-let curveControl = null;
-let isDrawingCurve = false;    // true mientras haces click+arrastre para la recta inicial
-let isAdjustingCurve = false;  // true después de soltar, cuando aparece el punto de control
-let isDraggingControl = false; // true mientras arrastras el punto de control
-let previewImageDataCurve = null;
-
-// auxiliar: obtener celda desde evento (compatible con tu código)
-function getCellFromEventLocal(e) {
-  const rect = pixelCanvas.getBoundingClientRect();
-  const cellSize = pixelCanvas.width / gridSize;
-  const x = Math.floor((e.clientX - rect.left) / cellSize);
-  const y = Math.floor((e.clientY - rect.top) / cellSize);
-  return { x, y, cellSize };
-}
-
-// MOUSE DOWN: iniciar dibujo o empezar a arrastrar el control si se clickea encima
-pixelCanvas.addEventListener("mousedown", (e) => {
-  if (currentTool !== "curve") return;
-  const { x, y } = getCellFromEventLocal(e);
-
-  // Si aún no hemos empezado: iniciamos start (click + arrastra)
-  if (!isDrawingCurve && !isAdjustingCurve) {
-    curveStart = { x, y };
-    isDrawingCurve = true;
-    // guardamos snapshot para preview (no guardamos historial aún)
-    try { previewImageDataCurve = ctx.getImageData(0, 0, pixelCanvas.width, pixelCanvas.height); } catch (err) { previewImageDataCurve = null; }
-    return;
+  const curveOption = document.querySelector('[data-figure="curve"]');
+  if (curveOption) {
+    curveOption.addEventListener("click", () => {
+      currentTool = "curve";
+    });
   }
 
-  // Si estamos en modo ajustar (ya hay start y end) -> comprobar si clic cerca del control para arrastrarlo
-  if (isAdjustingCurve && curveControl) {
-    const d = Math.hypot(x - curveControl.x, y - curveControl.y);
-    if (d <= 1.5) {
-      isDraggingControl = true;
-      // nos aseguramos de tener la imagen base para restaurar mientras se mueve
-      try { if (!previewImageDataCurve) previewImageDataCurve = ctx.getImageData(0, 0, pixelCanvas.width, pixelCanvas.height); } catch (err) {}
+  // estado
+  let curveStart = null;
+  let curveEnd = null;
+  let curveControl = null;
+  let isDrawingCurve = false; // true mientras haces click+arrastre para la recta inicial
+  let isAdjustingCurve = false; // true después de soltar, cuando aparece el punto de control
+  let isDraggingControl = false; // true mientras arrastras el punto de control
+  let previewImageDataCurve = null;
+
+  // auxiliar: obtener celda desde evento (compatible con tu código)
+  function getCellFromEventLocal(e) {
+    const rect = pixelCanvas.getBoundingClientRect();
+    const cellSize = pixelCanvas.width / gridSize;
+    const x = Math.floor((e.clientX - rect.left) / cellSize);
+    const y = Math.floor((e.clientY - rect.top) / cellSize);
+    return { x, y, cellSize };
+  }
+
+  // MOUSE DOWN: iniciar dibujo o empezar a arrastrar el control si se clickea encima
+  pixelCanvas.addEventListener("mousedown", (e) => {
+    if (currentTool !== "curve") return;
+    const { x, y } = getCellFromEventLocal(e);
+
+    // Si aún no hemos empezado: iniciamos start (click + arrastra)
+    if (!isDrawingCurve && !isAdjustingCurve) {
+      curveStart = { x, y };
+      isDrawingCurve = true;
+      // guardamos snapshot para preview (no guardamos historial aún)
+      try {
+        previewImageDataCurve = ctx.getImageData(
+          0,
+          0,
+          pixelCanvas.width,
+          pixelCanvas.height
+        );
+      } catch (err) {
+        previewImageDataCurve = null;
+      }
+      return;
+    }
+
+    // Si estamos en modo ajustar (ya hay start y end) -> comprobar si clic cerca del control para arrastrarlo
+    if (isAdjustingCurve && curveControl) {
+      const d = Math.hypot(x - curveControl.x, y - curveControl.y);
+      if (d <= 1.5) {
+        isDraggingControl = true;
+        // nos aseguramos de tener la imagen base para restaurar mientras se mueve
+        try {
+          if (!previewImageDataCurve)
+            previewImageDataCurve = ctx.getImageData(
+              0,
+              0,
+              pixelCanvas.width,
+              pixelCanvas.height
+            );
+        } catch (err) {}
+      }
+    }
+  });
+
+  // MOUSE MOVE: preview de la recta mientras arrastras, o mover control mientras arrastras
+  pixelCanvas.addEventListener("mousemove", (e) => {
+    if (currentTool !== "curve") return;
+    const { x, y, cellSize } = getCellFromEventLocal(e);
+
+    // Preview de la línea recta durante el primer arrastre
+    if (isDrawingCurve && curveStart && !curveEnd) {
+      if (previewImageDataCurve) ctx.putImageData(previewImageDataCurve, 0, 0);
+      ctx.fillStyle = currentColor;
+      drawLineCells(curveStart.x, curveStart.y, x, y, cellSize);
+      return;
+    }
+
+    // Si estamos arrastrando el punto de control, actualizar preview de la curva
+    if (isDraggingControl && isAdjustingCurve && curveStart && curveEnd) {
+      curveControl = { x, y };
+      if (previewImageDataCurve) ctx.putImageData(previewImageDataCurve, 0, 0);
+      ctx.fillStyle = currentColor;
+      drawQuadraticCurveCells(curveStart, curveControl, curveEnd, cellSize);
+      // mostrar handle rojo mientras se arrastra
+      ctx.fillStyle = "red";
+      ctx.fillRect(
+        curveControl.x * cellSize,
+        curveControl.y * cellSize,
+        cellSize,
+        cellSize
+      );
+      return;
+    }
+
+    // Si estamos en ajuste pero aún no arrastrando, mostrar la curva con el control actual (sin modificarlo)
+    if (
+      !isDraggingControl &&
+      isAdjustingCurve &&
+      curveStart &&
+      curveEnd &&
+      curveControl
+    ) {
+      if (previewImageDataCurve) ctx.putImageData(previewImageDataCurve, 0, 0);
+      ctx.fillStyle = currentColor;
+      drawQuadraticCurveCells(curveStart, curveControl, curveEnd, cellSize);
+      ctx.fillStyle = "red";
+      ctx.fillRect(
+        curveControl.x * cellSize,
+        curveControl.y * cellSize,
+        cellSize,
+        cellSize
+      );
+      return;
+    }
+  });
+
+  // MOUSE UP: finalizar la recta inicial (y pasar a ajustar) o finalizar el ajuste (fijar curva)
+  pixelCanvas.addEventListener("mouseup", (e) => {
+    if (currentTool !== "curve") return;
+    const { x, y, cellSize } = getCellFromEventLocal(e);
+
+    // Si estábamos dibujando la recta (click + drag) -> fijar end y pasar a ajuste
+    if (isDrawingCurve && !curveEnd) {
+      curveEnd = { x, y };
+      // punto de control inicial en el centro de la recta
+      curveControl = {
+        x: Math.round((curveStart.x + curveEnd.x) / 2),
+        y: Math.round((curveStart.y + curveEnd.y) / 2),
+      };
+      isDrawingCurve = false;
+      isAdjustingCurve = true;
+
+      // pintar preview de la curva con handle
+      if (previewImageDataCurve) ctx.putImageData(previewImageDataCurve, 0, 0);
+      ctx.fillStyle = currentColor;
+      drawQuadraticCurveCells(curveStart, curveControl, curveEnd, cellSize);
+      ctx.fillStyle = "red";
+      ctx.fillRect(
+        curveControl.x * cellSize,
+        curveControl.y * cellSize,
+        cellSize,
+        cellSize
+      );
+      return;
+    }
+
+    // Si estábamos arrastrando el control -> fijar curva final y limpiar
+    if (
+      isDraggingControl &&
+      isAdjustingCurve &&
+      curveStart &&
+      curveEnd &&
+      curveControl
+    ) {
+      isDraggingControl = false;
+
+      // restaurar base y rasterizar curva final
+      if (previewImageDataCurve) ctx.putImageData(previewImageDataCurve, 0, 0);
+      ctx.fillStyle = currentColor;
+      drawQuadraticCurveCells(curveStart, curveControl, curveEnd, cellSize);
+
+      // guardar undo
+      saveState();
+
+      // limpiar estados temporales
+      isAdjustingCurve = false;
+      curveStart = null;
+      curveEnd = null;
+      curveControl = null;
+      previewImageDataCurve = null;
+      return;
+    }
+  });
+
+  // Si el usuario sale del canvas mientras dibuja, cancelar y restaurar
+  pixelCanvas.addEventListener("mouseleave", () => {
+    if (isDrawingCurve || isAdjustingCurve || isDraggingControl) {
+      if (previewImageDataCurve) ctx.putImageData(previewImageDataCurve, 0, 0);
+      isDrawingCurve = false;
+      isAdjustingCurve = false;
+      isDraggingControl = false;
+      curveStart = null;
+      curveEnd = null;
+      curveControl = null;
+      previewImageDataCurve = null;
+    }
+  });
+
+  // ===== DIBUJO de curva Bézier cuadrática  =====
+  function drawQuadraticCurveCells(p0, p1, p2, cellSize) {
+    const steps = 200; // suavidad
+    let prevX = p0.x;
+    let prevY = p0.y;
+
+    for (let t = 1; t <= steps; t++) {
+      const tt = t / steps;
+      const inv = 1 - tt;
+      const x = Math.round(
+        inv * inv * p0.x + 2 * inv * tt * p1.x + tt * tt * p2.x
+      );
+      const y = Math.round(
+        inv * inv * p0.y + 2 * inv * tt * p1.y + tt * tt * p2.y
+      );
+
+      drawLineCells(prevX, prevY, x, y, cellSize);
+      prevX = x;
+      prevY = y;
     }
   }
-});
-
-// MOUSE MOVE: preview de la recta mientras arrastras, o mover control mientras arrastras
-pixelCanvas.addEventListener("mousemove", (e) => {
-  if (currentTool !== "curve") return;
-  const { x, y, cellSize } = getCellFromEventLocal(e);
-
-  // Preview de la línea recta durante el primer arrastre
-  if (isDrawingCurve && curveStart && !curveEnd) {
-    if (previewImageDataCurve) ctx.putImageData(previewImageDataCurve, 0, 0);
-    ctx.fillStyle = currentColor;
-    drawLineCells(curveStart.x, curveStart.y, x, y, cellSize);
-    return;
-  }
-
-  // Si estamos arrastrando el punto de control, actualizar preview de la curva
-  if (isDraggingControl && isAdjustingCurve && curveStart && curveEnd) {
-    curveControl = { x, y };
-    if (previewImageDataCurve) ctx.putImageData(previewImageDataCurve, 0, 0);
-    ctx.fillStyle = currentColor;
-    drawQuadraticCurveCells(curveStart, curveControl, curveEnd, cellSize);
-    // mostrar handle rojo mientras se arrastra
-    ctx.fillStyle = "red";
-    ctx.fillRect(curveControl.x * cellSize, curveControl.y * cellSize, cellSize, cellSize);
-    return;
-  }
-
-  // Si estamos en ajuste pero aún no arrastrando, mostrar la curva con el control actual (sin modificarlo)
-  if (!isDraggingControl && isAdjustingCurve && curveStart && curveEnd && curveControl) {
-    if (previewImageDataCurve) ctx.putImageData(previewImageDataCurve, 0, 0);
-    ctx.fillStyle = currentColor;
-    drawQuadraticCurveCells(curveStart, curveControl, curveEnd, cellSize);
-    ctx.fillStyle = "red";
-    ctx.fillRect(curveControl.x * cellSize, curveControl.y * cellSize, cellSize, cellSize);
-    return;
-  }
-});
-
-// MOUSE UP: finalizar la recta inicial (y pasar a ajustar) o finalizar el ajuste (fijar curva)
-pixelCanvas.addEventListener("mouseup", (e) => {
-  if (currentTool !== "curve") return;
-  const { x, y, cellSize } = getCellFromEventLocal(e);
-
-  // Si estábamos dibujando la recta (click + drag) -> fijar end y pasar a ajuste
-  if (isDrawingCurve && !curveEnd) {
-    curveEnd = { x, y };
-    // punto de control inicial en el centro de la recta
-    curveControl = {
-      x: Math.round((curveStart.x + curveEnd.x) / 2),
-      y: Math.round((curveStart.y + curveEnd.y) / 2)
-    };
-    isDrawingCurve = false;
-    isAdjustingCurve = true;
-
-    // pintar preview de la curva con handle
-    if (previewImageDataCurve) ctx.putImageData(previewImageDataCurve, 0, 0);
-    ctx.fillStyle = currentColor;
-    drawQuadraticCurveCells(curveStart, curveControl, curveEnd, cellSize);
-    ctx.fillStyle = "red";
-    ctx.fillRect(curveControl.x * cellSize, curveControl.y * cellSize, cellSize, cellSize);
-    return;
-  }
-
-  // Si estábamos arrastrando el control -> fijar curva final y limpiar
-  if (isDraggingControl && isAdjustingCurve && curveStart && curveEnd && curveControl) {
-    isDraggingControl = false;
-
-    // restaurar base y rasterizar curva final
-    if (previewImageDataCurve) ctx.putImageData(previewImageDataCurve, 0, 0);
-    ctx.fillStyle = currentColor;
-    drawQuadraticCurveCells(curveStart, curveControl, curveEnd, cellSize);
-
-    // guardar undo
-    saveState();
-
-    // limpiar estados temporales
-    isAdjustingCurve = false;
-    curveStart = null;
-    curveEnd = null;
-    curveControl = null;
-    previewImageDataCurve = null;
-    return;
-  }
-});
-
-// Si el usuario sale del canvas mientras dibuja, cancelar y restaurar
-pixelCanvas.addEventListener("mouseleave", () => {
-  if (isDrawingCurve || isAdjustingCurve || isDraggingControl) {
-    if (previewImageDataCurve) ctx.putImageData(previewImageDataCurve, 0, 0);
-    isDrawingCurve = false;
-    isAdjustingCurve = false;
-    isDraggingControl = false;
-    curveStart = null;
-    curveEnd = null;
-    curveControl = null;
-    previewImageDataCurve = null;
-  }
-});
-
-// ===== DIBUJO de curva Bézier cuadrática (usa drawLineCells existente) =====
-function drawQuadraticCurveCells(p0, p1, p2, cellSize) {
-  const steps = 200; // suavidad
-  let prevX = p0.x;
-  let prevY = p0.y;
-
-  for (let t = 1; t <= steps; t++) {
-    const tt = t / steps;
-    const inv = 1 - tt;
-    const x = Math.round(inv * inv * p0.x + 2 * inv * tt * p1.x + tt * tt * p2.x);
-    const y = Math.round(inv * inv * p0.y + 2 * inv * tt * p1.y + tt * tt * p2.y);
-
-    drawLineCells(prevX, prevY, x, y, cellSize);
-    prevX = x;
-    prevY = y;
-  }
-}
 
   // ======================
   // MOSTRAR / OCULTAR REJILLA
@@ -1532,481 +1641,720 @@ function drawQuadraticCurveCells(p0, p1, p2, cellSize) {
     }
   });
 
-
   // Desactivar menú contextual en el canvas
-pixelCanvas.addEventListener("contextmenu", (e) => e.preventDefault());
+  pixelCanvas.addEventListener("contextmenu", (e) => e.preventDefault());
 
-let prevTool = null; // para restaurar después de usar clic derecho
+  let prevTool = null; // para restaurar después de usar clic derecho
 
-// Detectar clic en el canvas
-pixelCanvas.addEventListener("mousedown", (e) => {
-  const rect = pixelCanvas.getBoundingClientRect();
-  const cellSize = pixelCanvas.width / gridSize;
-
-  // Guardar herramienta previa antes de forzar borrador con botón derecho
-  if (e.button === 2) { // click derecho
-    prevTool = currentTool;
-    currentTool = "eraser";
-
-    // Cambiar color/estilo del cursor fantasma (ej: rojo)
-    pixelCursor.style.background = "rgba(255,0,0,0.6)";
-  }
-
-  // Si es fill
-  if (currentTool === "fill") {
-    const x = Math.floor((e.clientX - rect.left) / cellSize);
-    const y = Math.floor((e.clientY - rect.top) / cellSize);
-
-    saveState();
-    bucketFill(x, y, currentColor);
-    return;
-  }
-
-  // Si es lápiz o borrador
-  if (currentTool === "pencil" || currentTool === "eraser") {
-    saveState();
-    drawing = true;
-    lastPos = null;
-    drawPixel(e);
-  }
-});
-
-pixelCanvas.addEventListener("mousemove", drawPixel);
-
-pixelCanvas.addEventListener("mouseup", (e) => {
-  drawing = false;
-  lastPos = null;
-
-  // restaurar herramienta previa si venía de clic derecho
-  if (e.button === 2 && prevTool) {
-    currentTool = prevTool;
-    prevTool = null;
-
-    // Restaurar color del cursor fantasma al actual
-    pixelCursor.style.background = currentColor;
-  }
-});
-
-pixelCanvas.addEventListener("mouseleave", () => { 
-  drawing = false; 
-  lastPos = null; 
-  if (prevTool) { 
-    currentTool = prevTool; 
-    prevTool = null; 
-
-    // Restaurar color del cursor fantasma
-    pixelCursor.style.background = currentColor;
-  }
-});
-
-
-
-// ======================
-// HERRAMIENTA LUPA / ZOOM (pegar al final del DOMContentLoaded)
-// ======================
-(function () {
-  // Bandera global usada por drawPixel para pausar el lápiz mientras se selecciona
-  window.__zoomSelecting = false;
-
-  const lupaBtn = document.getElementById("lupaBtn");
-  let selectionBox = null;
-  let selStart = null; // {cx, cy} en celdas
-  let selRect = null;  // {x, y, w, h} en píxeles de canvas
-  let zoomWindow = null;
-  let zoomCanvas = null;
-  let zoomCtx = null;
-  let zoomLevel = 2; // x2 por defecto
-  let isDraggingWindow = false;
-  let dragOffset = { x: 0, y: 0 };
-  let isDrawingInZoom = false;
-
-  // Helpers
-  function getCellSize() {
-    return Math.floor(pixelCanvas.width / gridSize);
-  }
-
-  function getMouseCell(e) {
+  // Detectar clic en el canvas
+  pixelCanvas.addEventListener("mousedown", (e) => {
     const rect = pixelCanvas.getBoundingClientRect();
-    const cellSize = getCellSize();
-    const cx = Math.floor((e.clientX - rect.left) / cellSize);
-    const cy = Math.floor((e.clientY - rect.top) / cellSize);
-    return { cx: clamp(cx, 0, gridSize - 1), cy: clamp(cy, 0, gridSize - 1) };
-  }
+    const cellSize = pixelCanvas.width / gridSize;
 
-  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+    // Guardar herramienta previa antes de forzar borrador con botón derecho
+    if (e.button === 2) {
+      // click derecho
+      prevTool = currentTool;
+      currentTool = "eraser";
 
-  // Activate/deactivate selection mode
-  lupaBtn.addEventListener("click", () => {
-    if (window.__zoomSelecting) {
-      cancelSelectionMode();
+      // Cambiar color/estilo del cursor fantasma (ej: rojo)
+      pixelCursor.style.background = "rgba(255,0,0,0.6)";
+    }
+
+    // Si es fill
+    if (currentTool === "fill") {
+      const x = Math.floor((e.clientX - rect.left) / cellSize);
+      const y = Math.floor((e.clientY - rect.top) / cellSize);
+
+      saveState();
+      bucketFill(x, y, currentColor);
       return;
     }
-    // start selection mode
-    window.__zoomSelecting = true;
-    pixelCanvas.style.cursor = "crosshair";
-    // create selection visual (div)
-    if (!selectionBox) {
-      selectionBox = document.createElement("div");
-      selectionBox.style.position = "absolute";
-      selectionBox.style.pointerEvents = "none";
-      selectionBox.style.border = "2px dashed rgba(0,0,0,0.7)";
-      selectionBox.style.background = "rgba(0,0,0,0.06)";
-      selectionBox.style.zIndex = "9999";
-      document.body.appendChild(selectionBox);
+
+    // Si es lápiz o borrador
+    if (currentTool === "pencil" || currentTool === "eraser") {
+      saveState();
+      drawing = true;
+      lastPos = null;
+      drawPixel(e);
     }
   });
 
-  function cancelSelectionMode() {
-    window.__zoomSelecting = false;
-    pixelCanvas.style.cursor = "default";
-    if (selectionBox) {
-      selectionBox.remove();
-      selectionBox = null;
-    }
-  }
+  pixelCanvas.addEventListener("mousemove", drawPixel);
 
-  // Mouse handlers on the main canvas for selection (aligned to grid)
-  pixelCanvas.addEventListener("mousedown", (e) => {
-    if (!window.__zoomSelecting) return;
-    // Start cell
-    const { cx, cy } = getMouseCell(e);
-    selStart = { cx, cy };
-    updateSelectionBoxPosition(cx, cy, cx, cy);
-    // add temporary listeners for move/up
-    const move = (ev) => {
-      const { cx: mcx, cy: mcy } = getMouseCell(ev);
-      updateSelectionBoxPosition(selStart.cx, selStart.cy, mcx, mcy);
-    };
-    const up = (ev) => {
-      document.removeEventListener("mousemove", move);
-      document.removeEventListener("mouseup", up);
-      const { cx: ecx, cy: ecy } = getMouseCell(ev);
-      finalizeSelection(selStart.cx, selStart.cy, ecx, ecy);
-    };
-    document.addEventListener("mousemove", move);
-    document.addEventListener("mouseup", up);
+  pixelCanvas.addEventListener("mouseup", (e) => {
+    drawing = false;
+    lastPos = null;
+
+    // restaurar herramienta previa si venía de clic derecho
+    if (e.button === 2 && prevTool) {
+      currentTool = prevTool;
+      prevTool = null;
+
+      // Restaurar color del cursor fantasma al actual
+      pixelCursor.style.background = currentColor;
+    }
   });
 
-  function updateSelectionBoxPosition(sx, sy, ex, ey) {
-    const cellSize = getCellSize();
-    const minX = Math.min(sx, ex);
-    const minY = Math.min(sy, ey);
-    const wCells = Math.abs(ex - sx) + 1;
-    const hCells = Math.abs(ey - sy) + 1;
-    // canvas bounding rect for absolute positioning
-    const cRect = pixelCanvas.getBoundingClientRect();
-    const left = cRect.left + minX * cellSize + window.scrollX;
-    const top = cRect.top + minY * cellSize + window.scrollY;
-    const width = wCells * cellSize;
-    const height = hCells * cellSize;
+  pixelCanvas.addEventListener("mouseleave", () => {
+    drawing = false;
+    lastPos = null;
+    if (prevTool) {
+      currentTool = prevTool;
+      prevTool = null;
 
-    if (!selectionBox) return;
-    selectionBox.style.left = left + "px";
-    selectionBox.style.top = top + "px";
-    selectionBox.style.width = width + "px";
-    selectionBox.style.height = height + "px";
-  }
-
-  function finalizeSelection(sx, sy, ex, ey) {
-    // compute rect (in canvas pixels)
-    const minX = Math.min(sx, ex);
-    const minY = Math.min(sy, ey);
-    const wCells = Math.abs(ex - sx) + 1;
-    const hCells = Math.abs(ey - sy) + 1;
-    const cellSize = getCellSize();
-
-    selRect = {
-      x: minX * cellSize,
-      y: minY * cellSize,
-      w: wCells * cellSize,
-      h: hCells * cellSize,
-      cellsW: wCells,
-      cellsH: hCells,
-      cellX: minX,
-      cellY: minY
-    };
-
-    // stop selection mode (but keep selectionBox until zoomWindow created)
-    window.__zoomSelecting = false;
-    pixelCanvas.style.cursor = "default";
-
-    // Create the zoom window
-    createZoomWindow();
-    // remove selection box (we'll draw grid inside zoom)
-    if (selectionBox) {
-      selectionBox.remove();
-      selectionBox = null;
+      // Restaurar color del cursor fantasma
+      pixelCursor.style.background = currentColor;
     }
-  }
+  });
 
-  // Create zoom window
-  function createZoomWindow() {
-    if (!selRect) return;
+  // ======================
+  // HERRAMIENTA LUPA / ZOOM
+  // ======================
+  (function () {
+    // Bandera global usada por drawPixel para pausar el lápiz mientras se selecciona
+    window.__zoomSelecting = false;
 
-    // remove old
-    if (zoomWindow) zoomWindow.remove();
+    const lupaBtn = document.getElementById("lupaBtn");
+    let selectionBox = null;
+    let selStart = null; // {cx, cy} en celdas
+    let selRect = null; // {x, y, w, h} en píxeles de canvas
+    let zoomWindow = null;
+    let zoomCanvas = null;
+    let zoomCtx = null;
+    let zoomLevel = 2; // x2 por defecto
+    let isDraggingWindow = false;
+    let dragOffset = { x: 0, y: 0 };
+    let isDrawingInZoom = false;
 
-    // build window
-    zoomWindow = document.createElement("div");
-    zoomWindow.style.position = "fixed";
-    zoomWindow.style.left = "calc(100% - 360px)"; // default top-right area
-    zoomWindow.style.top = "20px";
-    zoomWindow.style.background = "#fff";
-    zoomWindow.style.border = "2px solid #111";
-    zoomWindow.style.borderRadius = "6px";
-    zoomWindow.style.zIndex = "10001";
-    zoomWindow.style.userSelect = "none";
-    zoomWindow.style.display = "flex";
-    zoomWindow.style.flexDirection = "column";
-    zoomWindow.style.padding = "0";
-    zoomWindow.style.boxShadow = "0 6px 18px rgba(0,0,0,0.25)";
+    // Helpers
+    function getCellSize() {
+      return Math.floor(pixelCanvas.width / gridSize);
+    }
 
-    // header (drag handle + controls)
-    const header = document.createElement("div");
-    header.style.display = "flex";
-    header.style.alignItems = "center";
-    header.style.justifyContent = "space-between";
-    header.style.background = "#f4f4f4";
-    header.style.padding = "6px 8px";
-    header.style.cursor = "move";
-    header.style.borderBottom = "1px solid #ddd";
+    function getMouseCell(e) {
+      const rect = pixelCanvas.getBoundingClientRect();
+      const cellSize = getCellSize();
+      const cx = Math.floor((e.clientX - rect.left) / cellSize);
+      const cy = Math.floor((e.clientY - rect.top) / cellSize);
+      return { cx: clamp(cx, 0, gridSize - 1), cy: clamp(cy, 0, gridSize - 1) };
+    }
 
-    const leftControls = document.createElement("div");
-    leftControls.style.display = "flex";
-    leftControls.style.gap = "6px";
+    function clamp(v, a, b) {
+      return Math.max(a, Math.min(b, v));
+    }
 
-    const btn2 = document.createElement("button");
-    btn2.textContent = "x2";
-    btn2.dataset.z = "2";
-    const btn3 = document.createElement("button");
-    btn3.textContent = "x3";
-    btn3.dataset.z = "3";
-    const btn4 = document.createElement("button");
-    btn4.textContent = "x4";
-    btn4.dataset.z = "4";
-    leftControls.appendChild(btn2);
-    leftControls.appendChild(btn3);
-    leftControls.appendChild(btn4);
-
-    const rightControls = document.createElement("div");
-    rightControls.style.display = "flex";
-    rightControls.style.gap = "6px";
-    const closeBtn = document.createElement("button");
-    closeBtn.textContent = "✕";
-    closeBtn.title = "Cerrar lupa";
-    rightControls.appendChild(closeBtn);
-
-    header.appendChild(leftControls);
-    header.appendChild(rightControls);
-
-    // canvas
-    zoomCanvas = document.createElement("canvas");
-    // each cell in zoom will be cellSize * zoomLevel px, and we want width = cellsW * (cellSize*zoom)
-    const cellSize = getCellSize();
-    zoomCanvas.width = selRect.cellsW * cellSize * zoomLevel;
-    zoomCanvas.height = selRect.cellsH * cellSize * zoomLevel;
-    zoomCanvas.style.imageRendering = "pixelated";
-    zoomCanvas.style.display = "block";
-    zoomCanvas.style.background = "#fff";
-    zoomCanvas.style.cursor = "crosshair";
-
-    // append
-    zoomWindow.appendChild(header);
-    zoomWindow.appendChild(zoomCanvas);
-    document.body.appendChild(zoomWindow);
-
-    zoomCtx = zoomCanvas.getContext("2d");
-    zoomCtx.imageSmoothingEnabled = false;
-
-    // make header draggable (move window)
-    header.addEventListener("mousedown", (ev) => {
-      isDraggingWindow = true;
-      dragOffset.x = ev.clientX - zoomWindow.offsetLeft;
-      dragOffset.y = ev.clientY - zoomWindow.offsetTop;
-    });
-    document.addEventListener("mousemove", (ev) => {
-      if (!isDraggingWindow) return;
-      zoomWindow.style.left = (ev.clientX - dragOffset.x) + "px";
-      zoomWindow.style.top = (ev.clientY - dragOffset.y) + "px";
-    });
-    document.addEventListener("mouseup", () => { isDraggingWindow = false; });
-
-    // close
-    closeBtn.addEventListener("click", () => {
-      if (zoomWindow) zoomWindow.remove();
-      zoomWindow = null;
-      selRect = null;
-    });
-
-    // zoom buttons
-    [btn2, btn3, btn4].forEach(b => {
-      b.addEventListener("click", () => {
-        zoomLevel = parseInt(b.dataset.z, 10);
-        zoomCanvas.width = selRect.cellsW * cellSize * zoomLevel;
-        zoomCanvas.height = selRect.cellsH * cellSize * zoomLevel;
-        drawZoom();
-      });
-    });
-
-    // draw initial
-    drawZoom();
-
-    // handle drawing inside zoom
-    // mousedown -> start drawingInZoom, saveState()
-    zoomCanvas.addEventListener("mousedown", (e) => {
-      // left button only
-      if (e.button !== 0) return;
-      isDrawingInZoom = true;
-      saveState(); // save once at start of stroke
-      handleZoomDraw(e);
-    });
-    zoomCanvas.addEventListener("mousemove", (e) => {
-      if (!isDrawingInZoom) return;
-      handleZoomDraw(e);
-    });
-    window.addEventListener("mouseup", () => {
-      if (isDrawingInZoom) {
-        isDrawingInZoom = false;
-        lastPos = null; // reset stroke continuity
-        updateMiniMap();
+    // Activate/deactivate selection mode
+    lupaBtn.addEventListener("click", () => {
+      if (window.__zoomSelecting) {
+        cancelSelectionMode();
+        return;
+      }
+      // start selection mode
+      window.__zoomSelecting = true;
+      pixelCanvas.style.cursor = "crosshair";
+      // create selection visual (div)
+      if (!selectionBox) {
+        selectionBox = document.createElement("div");
+        selectionBox.style.position = "absolute";
+        selectionBox.style.pointerEvents = "none";
+        selectionBox.style.border = "2px dashed rgba(0,0,0,0.7)";
+        selectionBox.style.background = "rgba(0,0,0,0.06)";
+        selectionBox.style.zIndex = "9999";
+        document.body.appendChild(selectionBox);
       }
     });
 
-    // keep zoom synced with changes in main canvas
-    // using rAF loop for smoothness
-    let alive = true;
-    const loop = () => {
-      if (!alive) return;
-      if (!zoomWindow) { alive = false; return; }
+    function cancelSelectionMode() {
+      window.__zoomSelecting = false;
+      pixelCanvas.style.cursor = "default";
+      if (selectionBox) {
+        selectionBox.remove();
+        selectionBox = null;
+      }
+    }
+
+    // Mouse handlers on the main canvas for selection (aligned to grid)
+    pixelCanvas.addEventListener("mousedown", (e) => {
+      if (!window.__zoomSelecting) return;
+      // Start cell
+      const { cx, cy } = getMouseCell(e);
+      selStart = { cx, cy };
+      updateSelectionBoxPosition(cx, cy, cx, cy);
+      // add temporary listeners for move/up
+      const move = (ev) => {
+        const { cx: mcx, cy: mcy } = getMouseCell(ev);
+        updateSelectionBoxPosition(selStart.cx, selStart.cy, mcx, mcy);
+      };
+      const up = (ev) => {
+        document.removeEventListener("mousemove", move);
+        document.removeEventListener("mouseup", up);
+        const { cx: ecx, cy: ecy } = getMouseCell(ev);
+        finalizeSelection(selStart.cx, selStart.cy, ecx, ecy);
+      };
+      document.addEventListener("mousemove", move);
+      document.addEventListener("mouseup", up);
+    });
+
+    function updateSelectionBoxPosition(sx, sy, ex, ey) {
+      const cellSize = getCellSize();
+      const minX = Math.min(sx, ex);
+      const minY = Math.min(sy, ey);
+      const wCells = Math.abs(ex - sx) + 1;
+      const hCells = Math.abs(ey - sy) + 1;
+      // canvas bounding rect for absolute positioning
+      const cRect = pixelCanvas.getBoundingClientRect();
+      const left = cRect.left + minX * cellSize + window.scrollX;
+      const top = cRect.top + minY * cellSize + window.scrollY;
+      const width = wCells * cellSize;
+      const height = hCells * cellSize;
+
+      if (!selectionBox) return;
+      selectionBox.style.left = left + "px";
+      selectionBox.style.top = top + "px";
+      selectionBox.style.width = width + "px";
+      selectionBox.style.height = height + "px";
+    }
+
+    function finalizeSelection(sx, sy, ex, ey) {
+      // compute rect (in canvas pixels)
+      const minX = Math.min(sx, ex);
+      const minY = Math.min(sy, ey);
+      const wCells = Math.abs(ex - sx) + 1;
+      const hCells = Math.abs(ey - sy) + 1;
+      const cellSize = getCellSize();
+
+      selRect = {
+        x: minX * cellSize,
+        y: minY * cellSize,
+        w: wCells * cellSize,
+        h: hCells * cellSize,
+        cellsW: wCells,
+        cellsH: hCells,
+        cellX: minX,
+        cellY: minY,
+      };
+
+      // stop selection mode (but keep selectionBox until zoomWindow created)
+      window.__zoomSelecting = false;
+      pixelCanvas.style.cursor = "default";
+
+      // Create the zoom window
+      createZoomWindow();
+      // remove selection box (we'll draw grid inside zoom)
+      if (selectionBox) {
+        selectionBox.remove();
+        selectionBox = null;
+      }
+    }
+
+    // Create zoom window
+    function createZoomWindow() {
+      if (!selRect) return;
+
+      // remove old
+      if (zoomWindow) zoomWindow.remove();
+
+      // build window
+      zoomWindow = document.createElement("div");
+      zoomWindow.style.position = "fixed";
+      zoomWindow.style.left = "calc(100% - 360px)"; // default top-right area
+      zoomWindow.style.top = "20px";
+      zoomWindow.style.background = "#fff";
+      zoomWindow.style.border = "2px solid #111";
+      zoomWindow.style.borderRadius = "6px";
+      zoomWindow.style.zIndex = "10001";
+      zoomWindow.style.userSelect = "none";
+      zoomWindow.style.display = "flex";
+      zoomWindow.style.flexDirection = "column";
+      zoomWindow.style.padding = "0";
+      zoomWindow.style.boxShadow = "0 6px 18px rgba(0,0,0,0.25)";
+
+      // header (drag handle + controls)
+      const header = document.createElement("div");
+      header.style.display = "flex";
+      header.style.alignItems = "center";
+      header.style.justifyContent = "space-between";
+      header.style.background = "#f4f4f4";
+      header.style.padding = "6px 8px";
+      header.style.cursor = "move";
+      header.style.borderBottom = "1px solid #ddd";
+
+      const leftControls = document.createElement("div");
+      leftControls.style.display = "flex";
+      leftControls.style.gap = "6px";
+
+      const btn2 = document.createElement("button");
+      btn2.textContent = "x2";
+      btn2.dataset.z = "2";
+      const btn3 = document.createElement("button");
+      btn3.textContent = "x3";
+      btn3.dataset.z = "3";
+      const btn4 = document.createElement("button");
+      btn4.textContent = "x4";
+      btn4.dataset.z = "4";
+      leftControls.appendChild(btn2);
+      leftControls.appendChild(btn3);
+      leftControls.appendChild(btn4);
+
+      const rightControls = document.createElement("div");
+      rightControls.style.display = "flex";
+      rightControls.style.gap = "6px";
+      const closeBtn = document.createElement("button");
+      closeBtn.textContent = "✕";
+      closeBtn.title = "Cerrar lupa";
+      rightControls.appendChild(closeBtn);
+
+      header.appendChild(leftControls);
+      header.appendChild(rightControls);
+
+      // canvas
+      zoomCanvas = document.createElement("canvas");
+      // each cell in zoom will be cellSize * zoomLevel px, and we want width = cellsW * (cellSize*zoom)
+      const cellSize = getCellSize();
+      zoomCanvas.width = selRect.cellsW * cellSize * zoomLevel;
+      zoomCanvas.height = selRect.cellsH * cellSize * zoomLevel;
+      zoomCanvas.style.imageRendering = "pixelated";
+      zoomCanvas.style.display = "block";
+      zoomCanvas.style.background = "#fff";
+      zoomCanvas.style.cursor = "crosshair";
+
+      // append
+      zoomWindow.appendChild(header);
+      zoomWindow.appendChild(zoomCanvas);
+      document.body.appendChild(zoomWindow);
+
+      zoomCtx = zoomCanvas.getContext("2d");
+      zoomCtx.imageSmoothingEnabled = false;
+
+      // make header draggable (move window)
+      header.addEventListener("mousedown", (ev) => {
+        isDraggingWindow = true;
+        dragOffset.x = ev.clientX - zoomWindow.offsetLeft;
+        dragOffset.y = ev.clientY - zoomWindow.offsetTop;
+      });
+      document.addEventListener("mousemove", (ev) => {
+        if (!isDraggingWindow) return;
+        zoomWindow.style.left = ev.clientX - dragOffset.x + "px";
+        zoomWindow.style.top = ev.clientY - dragOffset.y + "px";
+      });
+      document.addEventListener("mouseup", () => {
+        isDraggingWindow = false;
+      });
+
+      // close
+      closeBtn.addEventListener("click", () => {
+        if (zoomWindow) zoomWindow.remove();
+        zoomWindow = null;
+        selRect = null;
+      });
+
+      // zoom buttons
+      [btn2, btn3, btn4].forEach((b) => {
+        b.addEventListener("click", () => {
+          zoomLevel = parseInt(b.dataset.z, 10);
+          zoomCanvas.width = selRect.cellsW * cellSize * zoomLevel;
+          zoomCanvas.height = selRect.cellsH * cellSize * zoomLevel;
+          drawZoom();
+        });
+      });
+
+      // draw initial
       drawZoom();
+
+      // handle drawing inside zoom
+      // mousedown -> start drawingInZoom, saveState()
+      zoomCanvas.addEventListener("mousedown", (e) => {
+        // left button only
+        if (e.button !== 0) return;
+        isDrawingInZoom = true;
+        saveState(); // save once at start of stroke
+        handleZoomDraw(e);
+      });
+      zoomCanvas.addEventListener("mousemove", (e) => {
+        if (!isDrawingInZoom) return;
+        handleZoomDraw(e);
+      });
+      window.addEventListener("mouseup", () => {
+        if (isDrawingInZoom) {
+          isDrawingInZoom = false;
+          lastPos = null; // reset stroke continuity
+          updateMiniMap();
+        }
+      });
+
+      // keep zoom synced with changes in main canvas
+      // using rAF loop for smoothness
+      let alive = true;
+      const loop = () => {
+        if (!alive) return;
+        if (!zoomWindow) {
+          alive = false;
+          return;
+        }
+        drawZoom();
+        requestAnimationFrame(loop);
+      };
       requestAnimationFrame(loop);
-    };
-    requestAnimationFrame(loop);
-  }
-
-  // draw zoom contents and overlay grid (same color as your gridCanvas strokes)
-  function drawZoom() {
-    if (!zoomCtx || !selRect) return;
-    const cellSize = getCellSize();
-    // draw the selected rect from the main canvas, scale up by zoomLevel
-    zoomCtx.clearRect(0, 0, zoomCanvas.width, zoomCanvas.height);
-    zoomCtx.imageSmoothingEnabled = false;
-    zoomCtx.drawImage(
-      pixelCanvas,
-      selRect.x, selRect.y, selRect.w, selRect.h,
-      0, 0, selRect.w * zoomLevel, selRect.h * zoomLevel
-    );
-
-    // draw grid lines (same color as your gridCtx strokeStyle if possible)
-    // We'll sample pixel from gridCanvas (top-left inside a grid line area) to get color
-    let gridStroke = "#ccc";
-    try {
-      const sample = gridCtx.getImageData(1, 1, 1, 1).data;
-      gridStroke = `rgba(${sample[0]},${sample[1]},${sample[2]},${sample[3]/255})`;
-    } catch (err) {
-      gridStroke = "#ccc";
     }
-    zoomCtx.strokeStyle = gridStroke;
-    zoomCtx.lineWidth = 1;
 
-    const cellScaled = cellSize * zoomLevel;
-    // verticals
-    for (let i = 0; i <= selRect.cellsW; i++) {
-      const x = i * cellScaled + 0.5; // 0.5 to keep sharp line
-      zoomCtx.beginPath();
-      zoomCtx.moveTo(x, 0);
-      zoomCtx.lineTo(x, zoomCanvas.height);
-      zoomCtx.stroke();
+    // draw zoom contents and overlay grid (same color as your gridCanvas strokes)
+    function drawZoom() {
+      if (!zoomCtx || !selRect) return;
+      const cellSize = getCellSize();
+      // draw the selected rect from the main canvas, scale up by zoomLevel
+      zoomCtx.clearRect(0, 0, zoomCanvas.width, zoomCanvas.height);
+      zoomCtx.imageSmoothingEnabled = false;
+      zoomCtx.drawImage(
+        pixelCanvas,
+        selRect.x,
+        selRect.y,
+        selRect.w,
+        selRect.h,
+        0,
+        0,
+        selRect.w * zoomLevel,
+        selRect.h * zoomLevel
+      );
+
+      // draw grid lines (same color as your gridCtx strokeStyle if possible)
+      // We'll sample pixel from gridCanvas (top-left inside a grid line area) to get color
+      let gridStroke = "#ccc";
+      try {
+        const sample = gridCtx.getImageData(1, 1, 1, 1).data;
+        gridStroke = `rgba(${sample[0]},${sample[1]},${sample[2]},${
+          sample[3] / 255
+        })`;
+      } catch (err) {
+        gridStroke = "#ccc";
+      }
+      zoomCtx.strokeStyle = gridStroke;
+      zoomCtx.lineWidth = 1;
+
+      const cellScaled = cellSize * zoomLevel;
+      // verticals
+      for (let i = 0; i <= selRect.cellsW; i++) {
+        const x = i * cellScaled + 0.5; // 0.5 to keep sharp line
+        zoomCtx.beginPath();
+        zoomCtx.moveTo(x, 0);
+        zoomCtx.lineTo(x, zoomCanvas.height);
+        zoomCtx.stroke();
+      }
+      // horizontals
+      for (let j = 0; j <= selRect.cellsH; j++) {
+        const y = j * cellScaled + 0.5;
+        zoomCtx.beginPath();
+        zoomCtx.moveTo(0, y);
+        zoomCtx.lineTo(zoomCanvas.width, y);
+        zoomCtx.stroke();
+      }
     }
-    // horizontals
-    for (let j = 0; j <= selRect.cellsH; j++) {
-      const y = j * cellScaled + 0.5;
-      zoomCtx.beginPath();
-      zoomCtx.moveTo(0, y);
-      zoomCtx.lineTo(zoomCanvas.width, y);
-      zoomCtx.stroke();
-    }
-  }
 
-  // Handle drawing actions inside the zoom. This paints on the main ctx using grid cells.
-  function handleZoomDraw(e) {
-    if (!selRect) return;
-    const rect = zoomCanvas.getBoundingClientRect();
-    const cellSize = getCellSize();
-    const cellScaled = cellSize * zoomLevel;
-    const offsetX = e.clientX - rect.left;
-    const offsetY = e.clientY - rect.top;
-    const cellX = Math.floor(offsetX / cellScaled); // 0..cellsW-1
-    const cellY = Math.floor(offsetY / cellScaled);
+    // Handle drawing actions inside the zoom. This paints on the main ctx using grid cells.
+    function handleZoomDraw(e) {
+      if (!selRect) return;
+      const rect = zoomCanvas.getBoundingClientRect();
+      const cellSize = getCellSize();
+      const cellScaled = cellSize * zoomLevel;
+      const offsetX = e.clientX - rect.left;
+      const offsetY = e.clientY - rect.top;
+      const cellX = Math.floor(offsetX / cellScaled); // 0..cellsW-1
+      const cellY = Math.floor(offsetY / cellScaled);
 
-    // compute global cell coords on main canvas
-    const globalCellX = selRect.cellX + clamp(cellX, 0, selRect.cellsW - 1);
-    const globalCellY = selRect.cellY + clamp(cellY, 0, selRect.cellsH - 1);
+      // compute global cell coords on main canvas
+      const globalCellX = selRect.cellX + clamp(cellX, 0, selRect.cellsW - 1);
+      const globalCellY = selRect.cellY + clamp(cellY, 0, selRect.cellsH - 1);
 
-    // implement brush and eraser behavior mapped to grid cells (matching drawPixel logic)
-    const brush = currentBrush || 1;
+      // implement brush and eraser behavior mapped to grid cells
+      const brush = currentBrush || 1;
 
-    const px = globalCellX;
-    const py = globalCellY;
+      const px = globalCellX;
+      const py = globalCellY;
 
-    const canvasCellSize = cellSize; // pixels per main-canvas-cell
+      const canvasCellSize = cellSize; // pixels per main-canvas-cell
 
-    // draw brush area (respecting currentTool)
-    for (let i = 0; i < brush; i++) {
-      for (let j = 0; j < brush; j++) {
-        const gx = px + i;
-        const gy = py + j;
-        if (gx < 0 || gy < 0 || gx >= gridSize || gy >= gridSize) continue;
-        const drawX = gx * canvasCellSize;
-        const drawY = gy * canvasCellSize;
-        if (currentTool === "pencil") {
-          ctx.fillStyle = currentColor;
-          ctx.fillRect(drawX, drawY, canvasCellSize, canvasCellSize);
-        } else if (currentTool === "eraser") {
-          ctx.clearRect(drawX, drawY, canvasCellSize, canvasCellSize);
-        } else if (currentTool === "fill") {
-          // fill tool mapped to cell coords
-          bucketFill(px, py, currentColor);
+      // draw brush area (respecting currentTool)
+      for (let i = 0; i < brush; i++) {
+        for (let j = 0; j < brush; j++) {
+          const gx = px + i;
+          const gy = py + j;
+          if (gx < 0 || gy < 0 || gx >= gridSize || gy >= gridSize) continue;
+          const drawX = gx * canvasCellSize;
+          const drawY = gy * canvasCellSize;
+          if (currentTool === "pencil") {
+            ctx.fillStyle = currentColor;
+            ctx.fillRect(drawX, drawY, canvasCellSize, canvasCellSize);
+          } else if (currentTool === "eraser") {
+            ctx.clearRect(drawX, drawY, canvasCellSize, canvasCellSize);
+          } else if (currentTool === "fill") {
+            // fill tool mapped to cell coords
+            bucketFill(px, py, currentColor);
+          }
         }
       }
-    }
 
-    // Keep continuity like drawPixel: approximate interpolation between lastPos and this pos
-    if (lastPos) {
-      const dx = px - lastPos.x;
-      const dy = py - lastPos.y;
-      const steps = Math.max(Math.abs(dx), Math.abs(dy));
-      for (let step = 1; step < steps; step++) {
-        const ix = lastPos.x + Math.round((dx * step) / steps);
-        const iy = lastPos.y + Math.round((dy * step) / steps);
-        for (let i = 0; i < brush; i++) {
-          for (let j = 0; j < brush; j++) {
-            const gx = ix + i;
-            const gy = iy + j;
-            if (gx < 0 || gy < 0 || gx >= gridSize || gy >= gridSize) continue;
-            const drawX = gx * canvasCellSize;
-            const drawY = gy * canvasCellSize;
-            if (currentTool === "pencil") {
-              ctx.fillStyle = currentColor;
-              ctx.fillRect(drawX, drawY, canvasCellSize, canvasCellSize);
-            } else if (currentTool === "eraser") {
-              ctx.clearRect(drawX, drawY, canvasCellSize, canvasCellSize);
+      // Keep continuity like drawPixel: approximate interpolation between lastPos and this pos
+      if (lastPos) {
+        const dx = px - lastPos.x;
+        const dy = py - lastPos.y;
+        const steps = Math.max(Math.abs(dx), Math.abs(dy));
+        for (let step = 1; step < steps; step++) {
+          const ix = lastPos.x + Math.round((dx * step) / steps);
+          const iy = lastPos.y + Math.round((dy * step) / steps);
+          for (let i = 0; i < brush; i++) {
+            for (let j = 0; j < brush; j++) {
+              const gx = ix + i;
+              const gy = iy + j;
+              if (gx < 0 || gy < 0 || gx >= gridSize || gy >= gridSize)
+                continue;
+              const drawX = gx * canvasCellSize;
+              const drawY = gy * canvasCellSize;
+              if (currentTool === "pencil") {
+                ctx.fillStyle = currentColor;
+                ctx.fillRect(drawX, drawY, canvasCellSize, canvasCellSize);
+              } else if (currentTool === "eraser") {
+                ctx.clearRect(drawX, drawY, canvasCellSize, canvasCellSize);
+              }
             }
           }
         }
       }
+
+      lastPos = { x: px, y: py };
+
+      // redraw zoom immediate
+      drawZoom();
+      updateMiniMap();
+    }
+  })();
+
+  // ===== CUENTAGOTAS COMPLETO =====
+  (function setupCuentaGotas() {
+    const btn = document.getElementById("CuentaGotasBtn");
+    if (
+      !btn ||
+      typeof pixelCanvas === "undefined" ||
+      typeof ctx === "undefined"
+    ) {
+      console.warn(
+        "CuentaGotas: falta elemento #CuentaGotasBtn o pixelCanvas/ctx no está definido."
+      );
+      return;
     }
 
-    lastPos = { x: px, y: py };
+    let cuentaGotasActivo = false;
+    let prevToolForPicker = null;
 
-    // redraw zoom immediate
-    drawZoom();
-    updateMiniMap();
+    // Convertir RGB a HEX
+    function rgbaToHex(r, g, b) {
+      return (
+        "#" + [r, g, b].map((x) => x.toString(16).padStart(2, "0")).join("")
+      );
+    }
+
+    function activateCuentaGotas() {
+      prevToolForPicker = currentTool;
+      currentTool = "eyedropper";
+      cuentaGotasActivo = true;
+      btn.classList.add("active");
+      pixelCanvas.style.cursor = "crosshair";
+    }
+
+    function deactivateCuentaGotas() {
+      cuentaGotasActivo = false;
+      // restaurar herramienta previa si existe (si no, dejar la actual)
+      if (prevToolForPicker) currentTool = prevToolForPicker;
+      prevToolForPicker = null;
+      btn.classList.remove("active");
+      pixelCanvas.style.cursor = "default";
+    }
+
+    // toggle mediante botón
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      if (!cuentaGotasActivo) activateCuentaGotas();
+      else deactivateCuentaGotas();
+    });
+
+    // Handler principal: usar fase de captura para evitar que otros listeners dibujen
+    function handlePick(e) {
+      if (!cuentaGotasActivo && currentTool !== "eyedropper") return;
+
+      // soportar touch
+      const clientX =
+        e.touches && e.touches[0] ? e.touches[0].clientX : e.clientX;
+      const clientY =
+        e.touches && e.touches[0] ? e.touches[0].clientY : e.clientY;
+
+      // impedir que otros listeners (pincel) reaccionen
+      e.preventDefault();
+      if (typeof e.stopImmediatePropagation === "function")
+        e.stopImmediatePropagation();
+
+      const rect = pixelCanvas.getBoundingClientRect();
+      const cellSize = pixelCanvas.width / gridSize;
+
+      const cellX = Math.floor((clientX - rect.left) / cellSize);
+      const cellY = Math.floor((clientY - rect.top) / cellSize);
+
+      try {
+        const imgData = ctx.getImageData(
+          0,
+          0,
+          pixelCanvas.width,
+          pixelCanvas.height
+        );
+        const rgba = getCellCenterColor(imgData, cellX, cellY); // ya tienes esta función en el script
+        const hex = rgbaToHex(rgba[0], rgba[1], rgba[2]);
+
+        // aplicar al color picker y a la herramienta actual
+        if (typeof colorPicker !== "undefined" && colorPicker)
+          colorPicker.value = hex;
+        currentColor = hex;
+      } catch (err) {
+        console.warn("CuentaGotas: fallo al leer pixel:", err);
+      }
+
+      // desactivar al seleccionar
+      deactivateCuentaGotas();
+    }
+
+    // Evitar añadir multiples listeners si ya existe
+    if (!pixelCanvas._cuentagotasAttached) {
+      // usar captura para ejecutarse antes que los listeners de dibujo
+      pixelCanvas.addEventListener("mousedown", handlePick, {
+        passive: false,
+        capture: true,
+      });
+      // touch support
+      pixelCanvas.addEventListener("touchstart", handlePick, {
+        passive: false,
+        capture: true,
+      });
+      pixelCanvas._cuentagotasAttached = true;
+    }
+
+    // permitir cancelar con ESC
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && cuentaGotasActivo) {
+        deactivateCuentaGotas();
+      }
+    });
+  })();
+
+
+  // colores recientes
+
+(function () {
+  const STORAGE_KEY = "pixelForge_recentColors_v2";
+  const MAX_RECENT = 8;
+  const container = document.getElementById("recentColors");
+  const clearBtn = document.getElementById("clearRecentBtn");
+  const colorPicker = document.getElementById("colorPicker");
+  let recentColors = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+  let lastColor = null;
+
+  // --- Funciones de apoyo ---
+  function normalizeHex(input) {
+    if (!input) return null;
+    input = String(input).trim().toUpperCase();
+    if (input.startsWith("#")) {
+      if (input.length === 4) {
+        const r = input[1], g = input[2], b = input[3];
+        return `#${r}${r}${g}${g}${b}${b}`;
+      }
+      if (input.length === 7) return input;
+    }
+    const m = input.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+    if (m) {
+      const [r, g, b] = [m[1], m[2], m[3]].map(Number);
+      return "#" + [r, g, b].map(v => v.toString(16).padStart(2, "0")).join("").toUpperCase();
+    }
+    return input;
   }
 
-})();
+  function colorDistance(c1, c2) {
+    if (!c1 || !c2) return 999;
+    const toRGB = c => [parseInt(c.slice(1,3),16), parseInt(c.slice(3,5),16), parseInt(c.slice(5,7),16)];
+    const [r1,g1,b1] = toRGB(c1), [r2,g2,b2] = toRGB(c2);
+    return Math.sqrt((r1-r2)**2 + (g1-g2)**2 + (b1-b2)**2);
+  }
 
+  function render() {
+    if (!container) return;
+    container.innerHTML = "";
+    recentColors.forEach(color => {
+      const sw = document.createElement("div");
+      sw.className = "recent-swatch";
+      sw.style.background = color;
+      sw.title = color;
+      sw.addEventListener("click", () => {
+  if (colorPicker) colorPicker.value = color;
   
+  // sincroniza con la variable real del lápiz
+  if (typeof currentColor !== "undefined") {
+    currentColor = color;
+  } else if (window.currentColor !== undefined) {
+    window.currentColor = color;
+  }
 
+  // actualiza el cursor
+  const pixelCursor = document.getElementById("pixelCursor");
+  if (pixelCursor) {
+    pixelCursor.style.background = color + "80";
+  }
+
+  updateRecent(color);
+});
+      sw.addEventListener("contextmenu", e => {
+        e.preventDefault();
+        recentColors = recentColors.filter(c => c !== color);
+        save();
+        render();
+      });
+      container.appendChild(sw);
+    });
+  }
+
+  function save() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(recentColors));
+  }
+
+  function updateRecent(newColor) {
+    const hex = normalizeHex(newColor);
+    if (!hex) return;
+
+    // Evitar guardar colores casi iguales al último
+    if (colorDistance(hex, lastColor) < 10) return;
+
+    lastColor = hex;
+    recentColors = [hex, ...recentColors.filter(c => c !== hex)].slice(0, MAX_RECENT);
+    save();
+    render();
+  }
+
+  // --- Inicialización ---
+  render();
+  if (recentColors[0]) lastColor = recentColors[0];
+
+  if (clearBtn) {
+    clearBtn.addEventListener("click", () => {
+      recentColors = [];
+      save();
+      render();
+    });
+  }
+
+  if (colorPicker) {
+    colorPicker.addEventListener("change", e => {
+      updateRecent(e.target.value);
+    });
+  }
+
+  // Exponer helper global para cuentagotas u otras herramientas
+  window.addRecentColor = function(hex) {
+    updateRecent(hex);
+  };
+})();
 
 });
