@@ -90,6 +90,7 @@
         <button id="eraserBtn">Borrador</button>
         <button id="lupaBtn">Lupa</button>
         <button id="figuresBtn">Figuras</button>
+        <button id="CuentaGotasBtn">CuentaGotas</button>
         <input type="color" id="colorPicker" value="#000000">
         <button id="clearCanvas">Limpiar Lienzo</button>
         <button id="fillTool">Rellenar</button>
@@ -123,6 +124,19 @@
   <br><br>
   <button id="saveSettings">Guardar Configuración</button>
 </div>
+
+
+<!-- Colores recientes -->
+
+<div id="recentColorsContainer" aria-live="polite" title="Colores usados recientemente">
+  <div id="recentColorsHeader">
+    <strong>Colores recientes</strong>
+    <button id="clearRecentBtn" title="Limpiar colores recientes">Limpiar</button>
+    <small style="margin-left:8px;">(clic izquierdo para aplicar • clic derecho para eliminar)</small>
+  </div>
+  <div id="recentColors" role="list" aria-label="Paleta de colores recientes"></div>
+</div>
+
 
              <!-- menu lapiz -->
 

@@ -244,3 +244,23 @@ body{
   border-radius: 4px;
   font-size: 14px;
 }
+
+
+/* Colores recientes */
+  #recentColorsContainer { 
+    display:flex; flex-direction:column; gap:6px; font-family: Inter, system-ui, sans-serif;
+    color: #e6e6e6; font-size:13px; user-select:none; 
+  }
+  #recentColorsHeader { display:flex; align-items:center; gap:8px; }
+  #recentColors { display:flex; gap:6px; flex-wrap:wrap; }
+  .recent-swatch {
+    width:28px; height:28px; border-radius:5px; border:1px solid rgba(0,0,0,0.45);
+    cursor:pointer; box-shadow: 0 1px 0 rgba(255,255,255,0.03) inset;
+    transition: transform .08s ease;
+  }
+  .recent-swatch:hover { transform: translateY(-2px); }
+  #clearRecentBtn {
+    background:transparent; border:1px solid rgba(255,255,255,0.06);
+    color:inherit; padding:4px 8px; border-radius:6px; cursor:pointer; font-size:12px;
+  }
+  #recentColorsContainer small { color: #9aa0a6; }
